@@ -10,11 +10,20 @@
   (println "3. Registrar venda de ações ")
   (println "4. Exibir extrato de transações por período")
   (println "5. Exibir saldo da carteira")
+
+  (let [
+        servico (read)
+  ]
+  (cond
+    (= servico 1) (do () (recur))
+    (= servico 2) (do () (recur))
+    (= servico 3) (do () (recur))
+    (= servico 4) (do () (recur))
+    (= servico 5) (do () (recur))
+    ))
   )
 
 (defn -main ;;- significa função estatica
-  "I don't do a whole lot ... yet." ;; documentação da função
   [& args] ;;pega todos os arumentos passados e empacota em um unico
-  (menu)
-  (println (http-client/get "https://pokeapi.co/api/v2/pokemon/pikachu/"))
+  (menu) 
   )

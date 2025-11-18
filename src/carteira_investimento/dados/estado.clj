@@ -4,8 +4,8 @@
 
 (def carteira
   "O atom central que armazena o estado da carteira de investimentos."
-  (atom {:transacoes []
-         :acoes {}
+  (atom {:transacoes [] ;; mapa de dados de cada transação financeira
+         :posicoes {} ;; cada posicao: quantidade, preco-medio, valor investido
          :saldo 0.0}))
 
 (defn add-transacao
@@ -15,17 +15,32 @@
   (c/swap! carteira update :transacoes c/conj transacao))
 
 (defn get-acoes
-  "Retorna o mapa de posições (acoes e quantidades)."
+  "Retorna o mapa de posições (posicoes e quantidades)."
   []
-  (:acoes @carteira))
+  (:posicoes @carteira))
 
 (defn get-saldo
   "Retorna o valor do saldo total da carteira."
   []
   (:saldo @carteira))
 
-(defn remove-acao
-  "Remove uma ação do mapa de :ações no atom 'carteira'.
+(defn remove-posicao
+  "Remove uma posicao do mapa de :posicoes no atom 'carteira'.
    Esta função deve ser chamada apenas se a quantidade da ação for zero."
   [ticker]
-  (c/swap! carteira update :acoes c/dissoc ticker))
+  (c/swap! carteira update :posicoes c/dissoc ticker))
+
+(defn set-saldo [novo-saldo]
+  "Atualiza o valor do saldo da carteira"
+  (c/swap! carteira c/assoc :saldo novo-saldo))
+
+(defn get-transacoes []
+  "Retorna todas as transações da carteira"
+  (:transacoes @carteira))
+
+(defn set-posicao-acao [ticker dados-posicao]
+  "atualiza os valores da posição específica"
+  (c/swap! carteira
+           assoc-in
+           [:acoes ticker]
+           dados-posicao))

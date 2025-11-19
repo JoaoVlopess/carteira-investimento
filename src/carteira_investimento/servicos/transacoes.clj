@@ -77,3 +77,7 @@
       (s-carteira/atualizar-estado-carteira) ;;fazer em carteira.clj
 
       transacao)))
+
+(defn obter-extrato-por-periodo 
+  "retorna o extrato do periodo específico"
+  [data-inicio data-fim ticker])

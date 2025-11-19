@@ -34,9 +34,15 @@
   "Atualiza o valor do saldo da carteira"
   (c/swap! carteira c/assoc :saldo novo-saldo))
 
-(defn get-transacoes []
+(defn get-transacoes 
   "Retorna todas as transações da carteira"
-  (:transacoes @carteira))
+  ([]
+   :transacoes @carteira)
+  
+  ([data-inicio data-fim]
+   ;;fazer
+   ) 
+  )
 
 (defn set-posicao-acao [ticker dados-posicao]
   "atualiza os valores da posição específica"

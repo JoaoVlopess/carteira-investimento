@@ -1,4 +1,4 @@
-;;Funções para consultar a API externa
+;;Funções para consultar a API externa de investimentos
 (ns carteira-investimento.integracao.acoes
   (:require [clj-http.client :as http]
             [clojure.set :as set]))

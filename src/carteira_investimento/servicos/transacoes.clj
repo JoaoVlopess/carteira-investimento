@@ -1,4 +1,4 @@
-;;Lógica de registro de compra/venda, validações
+;;Lógica de registro de compra/venda, validações. camada de interface para o usuário
 (ns carteira-investimento.servicos.transacoes
   (:require [carteira-investimento.dados.estado :as estado]
             [carteira-investimento.integracao.acoes :as acoes]

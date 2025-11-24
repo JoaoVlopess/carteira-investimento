@@ -1,4 +1,4 @@
-;;O atom central (RF-0 Permanecer dados) e funções de acesso/mutação crua.
+;;O atom central e funções de acesso/mutação crua. "Banco de dados"
 (ns carteira-investimento.dados.estado
   (:require [clojure.core :as c])) ;; usando para evitar conflitos de nomes do clojure e do meu escopo do projeto (c/ para funções do proprio cojure)
 

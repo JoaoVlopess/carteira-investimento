@@ -95,11 +95,11 @@
 
 (defn obter-extrato-por-periodo 
   "retorna o extrato do periodo específico"
-  ([data-inicio data-fim ]
-  (let [transacoes-periodo (estado/get-transacoes data-inicio data-fim)]
+  ([data-inicio data-fim ] ;; pega todos extratos do periodo especifico
+  (let [transacoes-periodo (estado/get-transacoes data-inicio data-fim)] 
     (sort-by :data transacoes-periodo)))
 
-  ([data-inicio data-fim ticker]
+  ([data-inicio data-fim ticker] ;; pega todos extratos do periodo e ticker especifico
   (let [
         transacoes-periodo (estado/get-transacoes data-inicio data-fim)
         transacoes-ticker (filter #(= (:ticker %) ticker) transacoes-periodo)]

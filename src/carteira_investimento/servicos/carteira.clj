@@ -60,7 +60,7 @@
                                    [ticker (assoc dados-posicao :ticker ticker)]))
 
                                transacoes-agrupadas)]
-(into {} posicoes-calculadas))) ;; Resultado será "ticker" {:qnt,:preco-medio,:ticker}
+(into {} posicoes-calculadas))) ;; transforma [chave valor] em map. Resultado será {"ticker" {:qnt,:preco-medio,:ticker}, ...}
 
 (defn calcular-rentabilidade-por-posicao 
   "Calcula as métricas de desempenho para uma única ação: Valor de Mercado, Valor Investido e o Lucro/Prejuízo Líquido.
@@ -80,7 +80,7 @@
                       :preco-atual preco-atual
                       :valor-investido valor-total-investido
                       :valor-mercado valor-mercado-atual
-                      :lucro-prejuizo lucro-preju-liquido
+                      :lucro-prejuizo lucro-preju-liquido ;; - é preju | + é lucro
                       }
         ]
     mapa-posicao
@@ -94,29 +94,31 @@
   []
   (let [todas-posicoes (estado/get-posicoes)]
 
-    (if (empty? todas-posicoes)
+    (if (empty? todas-posicoes) ;;caso a carteira esteja vazia
       {:posicoes-detalhadas []
        :total-investido 0.0
        :total-mercado 0.0
        :total-lucro-prejuizo 0.0}
 
-      (let [pares-posicoes (seq todas-posicoes)
-            estado-inicial-relatorio {:posicoes-detalhadas []
-                                      :total-investido 0.0
-                                      :total-mercado 0.0
-                                      :total-lucro-prejuizo 0.0}
+      (let [pares-posicoes (seq todas-posicoes) ;;converte o mapa de posições em uma sequência de pares [[ticker1 dados1] [ticker2 dados2] ...]
+            estado-inicial-relatorio {:posicoes-detalhadas [] ;; mapa de desempenho de cada posição (ticker)
+                                      :total-investido 0.0 ;; valor investido total
+                                      :total-mercado 0.0 ;; valor de mercado total
+                                      :total-lucro-prejuizo 0.0} ;; lucro/preju total
 
             relatorio-final (reduce
                              (fn [acumulador [ticker dados-posicao]]
                                (try
-                                 (let [dados-mercado (acoes/buscar-dados-acao ticker)
-                                       valor-atual (or (:preco-atual dados-mercado) 0.0)
-                                       relatorio-posicao (calcular-rentabilidade-por-posicao dados-posicao valor-atual)]
-
+                                 (let [dados-mercado (acoes/buscar-dados-acao ticker) ;; pega os dados atuais do mercado do ticker em questão
+                                       valor-atual (or (:preco-atual dados-mercado) 0.0) ;; busca valor atual da posição
+                                       relatorio-posicao (calcular-rentabilidade-por-posicao dados-posicao valor-atual)] ;; calcula a rentabilidade de cada posição do ticker em questão
+                                   
                                    {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
                                     :total-investido (+ (:total-investido acumulador) (:valor-investido relatorio-posicao))
                                     :total-mercado (+ (:total-mercado acumulador) (:valor-mercado relatorio-posicao))
                                     :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) (:lucro-prejuizo relatorio-posicao))})
+                                 ;; atualiza o estado-inicial-relatorio com o valor acumulado de cada desempenho das posições
+                                 
 
                                  (catch Exception e
                                    (println (str "ERRO ao buscar dados para " ticker ": " (.getMessage e)))
@@ -130,17 +132,17 @@
   "Atualiza o estado derivado da carteira (posições e saldo) após uma transação."
   []
   (try
-    (let [transacoes-carteira (estado/get-transacoes)]
+    (let [transacoes-carteira (estado/get-transacoes)] ;;pega todas as transações da carteira
 
       (when (empty? transacoes-carteira)
         (println "AVISO: Nenhuma transação encontrada"))
 
       (let [posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)]
-        (estado/set-posicoes-completas posicoes-calculadas)
+        (estado/set-posicoes-completas posicoes-calculadas) ;; calcula preço medio , quantidade de cada posição e atualiza na carteira
 
-        (let [relatorio-completo (obter-saldo-completo)
+        (let [relatorio-completo (obter-saldo-completo) ;; calcula o saldo da carteira (depois de ter calculado e adicionado as posições)
               saldo-total (:total-mercado relatorio-completo)]
-          (estado/set-saldo saldo-total))))
+          (estado/set-saldo saldo-total)))) ;; atualiza saldo total da carteira
 
     (catch Exception e
       (println "ERRO em atualizar-estado-carteira:" (.getMessage e))

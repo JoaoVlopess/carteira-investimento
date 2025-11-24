@@ -5,7 +5,7 @@
 (def carteira
   "O atom central que armazena o estado da carteira de investimentos."
   (atom {:transacoes [] ;; mapa de dados de cada transação financeira
-         :posicoes {} ;; cada posicao: quantidade, preco-medio, valor investido
+         :posicoes {} ;; cada posicao/ação: quantidade, preco-medio, valor investido
          :saldo 0.0}))
 
 (defn add-transacao
@@ -14,10 +14,15 @@
   [transacao]
   (c/swap! carteira update :transacoes c/conj transacao))
 
-(defn get-acoes
+(defn get-posicoes
   "Retorna o mapa de posições (posicoes e quantidades)."
   []
   (:posicoes @carteira))
+
+(defn get-posicao-especifica
+  "Retorna o mapa de posição para um único ticker, ou nil se não encontrado."
+  [ticker]
+  (get (:posicoes @carteira) ticker))
 
 (defn get-saldo
   "Retorna o valor do saldo total da carteira."
@@ -44,9 +49,14 @@
    ) 
   )
 
-(defn set-posicao-acao [ticker dados-posicao]
+(defn set-posicao [ticker dados-posicao]
   "atualiza os valores da posição específica"
   (c/swap! carteira
-           assoc-in
-           [:acoes ticker]
+           c/assoc-in
+           [:posicoes ticker]
            dados-posicao))
+
+(defn set-posicoes-completas
+  "Substitui o mapa de :posicoes do atom pelo novo mapa calculado."
+  [novo-mapa-posicoes]
+  (c/swap! carteira c/assoc :posicoes novo-mapa-posicoes))

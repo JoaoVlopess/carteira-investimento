@@ -89,13 +89,69 @@
   
   )
 
-(defn atualizar-estado-carteira
-  "Atualiza o valor contido na carteira"
+
+(defn obter-saldo-completo
+  "Retorna o saldo completo da carteira de forma funcional, sem átomos locais."
   []
-  (let[
-       transacoes-carteira (estado/get-transacoes)
-       posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)
-  ]
+  (let [todas-posicoes (estado/get-posicoes)
+        pares-posicoes (seq todas-posicoes) ; Converte o mapa em pares [ticker dados]
+
+        ;; Estrutura inicial do acumulador para o reduce:
+        estado-inicial-relatorio {:posicoes-detalhadas []
+                                  :total-investido 0.0
+                                  :total-mercado 0.0
+                                  :total-lucro-prejuizo 0.0}
+
+        ;; Itera sobre as posições e acumula os totais e a lista detalhada
+        relatorio-final (reduce
+                         (fn [acumulador [ticker dados-posicao]]
+                           ;; 1. Busca externa e Cálculo por posição
+                           (let [dados-mercado (acoes/buscar-dados-acao ticker)
+                                 valor-atual (:preco-atual dados-mercado)
+
+                                 relatorio-posicao (calcular-rentabilidade-por-posicao dados-posicao valor-atual)]
+
+                             ;; 2. Retorna o NOVO ACUMULADOR (soma e adiciona à lista)
+                             {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
+                              :total-investido (+ (:total-investido acumulador) (:valor-investido relatorio-posicao))
+                              :total-mercado (+ (:total-mercado acumulador) (:valor-mercado relatorio-posicao))
+                              :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) (:lucro-prejuizo relatorio-posicao))}))
+                         estado-inicial-relatorio
+                         pares-posicoes)]
+
+    ;; 3. Retorna o mapa final (que é o resultado do reduce)
+    relatorio-final))
+
+;; (defn atualizar-estado-carteira
+;;   "Atualiza o valor contido na carteira"
+;;   []
+;;   (let[
+;;        transacoes-carteira (estado/get-transacoes)
+;;        posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)
+;;        saldo-completo (obter-saldo-completo)
+;;        saldo-carteira (:total-mercado saldo-completo)
+;;   ]
+;;     (estado/set-posicoes-completas posicoes-calculadas)
+;;     (estado/set-saldo saldo-carteira)
+    
  
-   )
-  )
+;;    )
+;;   )
+
+(defn atualizar-estado-carteira
+  "Atualiza o estado derivado da carteira (posições e saldo) após uma transação."
+  []
+  (let [
+        transacoes-carteira (estado/get-transacoes)
+
+        posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)]
+
+    (estado/set-posicoes-completas posicoes-calculadas)
+
+
+    (let [
+          relatorio-completo (obter-saldo-completo)
+          saldo-total (:total-mercado relatorio-completo)]
+
+      (estado/set-saldo saldo-total)
+)))

@@ -7,7 +7,12 @@
 (defn registrar-compra
   "Registra a transação de compra no atom da carteira."
   [dados-brutos]
-  (let [{:keys [ticker quantidade preco_unitario moeda]} dados-brutos]
+
+   (when (nil? dados-brutos)
+    (throw (ex-info "Dados de entrada não podem ser nulos"
+                    {:dados dados-brutos :tipo :dados-nulos})))
+  
+  (let [{:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos)]
     
     (when (or (nil? ticker)
               (not (pos? quantidade))      ;; Quantidade deve ser > 0
@@ -17,17 +22,21 @@
     
   (let[
        valor-total (* quantidade preco_unitario) 
+       valor-liquido (+ valor-total taxas)
        id (str (java.util.UUID/randomUUID))
        transacao
        {:id-transacao id
-        :tipo "COMPRA"
+        :tipo :COMPRA
         :ticker ticker
         :quantidade quantidade
         :preco_unitario preco_unitario
+        :taxas taxas 
         :valor-total valor-total
+        :valor-liquido valor-liquido
         :moeda moeda
         :data (java.time.LocalDate/now)}
-  ]
+       ]
+   
     
     (estado/add-transacao transacao)
 
@@ -40,10 +49,13 @@
 (defn registrar-venda
   "Registra a transação de venda no atom da carteira após validar a posse das ações."
   [dados-brutos]
-  (let [{:keys [ticker quantidade preco_unitario moeda]} dados-brutos
-        posicoes-atuais (estado/get-acoes)
-        posicao-do-ativo (get posicoes-atuais ticker)
-        quantidade-em-carteira (:quantidade posicao-do-ativo) ;;quantidade do ativo especifico
+   (when (nil? dados-brutos)
+    (throw (ex-info "Dados de entrada não podem ser nulos"
+                    {:dados dados-brutos :tipo :dados-nulos})))
+  
+  (let [{:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos) 
+        posicao-do-ativo (estado/get-posicao-especifica ticker)
+       quantidade-em-carteira (or (:quantidade posicao-do-ativo) 0.0) ;;quantidade do ativo especifico
         ]
 
     (when (or (nil? ticker)
@@ -61,14 +73,17 @@
       
 
     (let [valor-total (* quantidade preco_unitario)
+          valor-liquido (- valor-total taxas)
           id (str (java.util.UUID/randomUUID))
           transacao
           {:id-transacao id
-           :tipo "VENDA"
+           :tipo :VENDA
            :ticker ticker
            :quantidade quantidade
-           :preco_unitario preco_unitario
+           :preco_unitario preco_unitario 
+           :taxas taxas
            :valor-total valor-total
+           :valor-liquido valor-liquido
            :moeda moeda
            :data (java.time.LocalDate/now)}]
 
@@ -80,4 +95,13 @@
 
 (defn obter-extrato-por-periodo 
   "retorna o extrato do periodo específico"
-  [data-inicio data-fim ticker])
+  ([data-inicio data-fim ]
+  (let [transacoes-periodo (estado/get-transacoes data-inicio data-fim)]
+    (sort-by :data transacoes-periodo)))
+
+  ([data-inicio data-fim ticker]
+  (let [
+        transacoes-periodo (estado/get-transacoes data-inicio data-fim)
+        transacoes-ticker (filter #(= (:ticker %) ticker) transacoes-periodo)]
+    (sort-by :data transacoes-ticker)))
+  )

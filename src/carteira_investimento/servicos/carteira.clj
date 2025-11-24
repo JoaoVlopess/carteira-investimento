@@ -3,8 +3,7 @@
   (:require [carteira-investimento.dados.estado :as estado]
             [carteira-investimento.integracao.acoes :as acoes]
             ;; Importações Opcionais de Clojure Core (se necessário)
-            [clojure.core :as c]
-            [clojure.string :as s]))
+))
 
 (defn calcula-preco-medio
   "custo real que cliente teve para adquirir as ações que ainda possui. Envolvendo custo total e quantidade liquida remanescente após operações
@@ -17,7 +16,7 @@
          estado-final (reduce
                        (fn [acumulador transacao]
                          (let [tipo (:tipo transacao)]
-                           (if (= tipo "COMPRA")
+                           (if (= tipo :COMPRA)
                              ;; Lógica da Compra: Soma quantidade e soma custo líquido
                              {:quantidade (+ (:quantidade acumulador) (:quantidade transacao))
                               :custo (+ (:custo acumulador) (:valor-liquido transacao))}
@@ -35,10 +34,10 @@
          quantidade-final (:quantidade estado-final)
          custo-final (:custo estado-final)]
      
-     (let [preco-medio-final (c/cond
-                               (c/pos? quantidade-final) (c// custo-final quantidade-final)
-                               (c/zero? quantidade-final) 0.0
-                               :else (c/throw (c/ex-info "Erro..." {})))]
+     (let [preco-medio-final (cond
+                               (pos? quantidade-final) (/ custo-final quantidade-final)
+                               (zero? quantidade-final) 0.0
+                               :else (throw (ex-info "Erro..." {})))]
   
      {:quantidade quantidade-final
       :preco-medio preco-medio-final})))
@@ -93,65 +92,56 @@
 (defn obter-saldo-completo
   "Retorna o saldo completo da carteira de forma funcional, sem átomos locais."
   []
-  (let [todas-posicoes (estado/get-posicoes)
-        pares-posicoes (seq todas-posicoes) ; Converte o mapa em pares [ticker dados]
+  (let [todas-posicoes (estado/get-posicoes)]
 
-        ;; Estrutura inicial do acumulador para o reduce:
-        estado-inicial-relatorio {:posicoes-detalhadas []
-                                  :total-investido 0.0
-                                  :total-mercado 0.0
-                                  :total-lucro-prejuizo 0.0}
+    (if (empty? todas-posicoes)
+      {:posicoes-detalhadas []
+       :total-investido 0.0
+       :total-mercado 0.0
+       :total-lucro-prejuizo 0.0}
 
-        ;; Itera sobre as posições e acumula os totais e a lista detalhada
-        relatorio-final (reduce
-                         (fn [acumulador [ticker dados-posicao]]
-                           ;; 1. Busca externa e Cálculo por posição
-                           (let [dados-mercado (acoes/buscar-dados-acao ticker)
-                                 valor-atual (:preco-atual dados-mercado)
+      (let [pares-posicoes (seq todas-posicoes)
+            estado-inicial-relatorio {:posicoes-detalhadas []
+                                      :total-investido 0.0
+                                      :total-mercado 0.0
+                                      :total-lucro-prejuizo 0.0}
 
-                                 relatorio-posicao (calcular-rentabilidade-por-posicao dados-posicao valor-atual)]
+            relatorio-final (reduce
+                             (fn [acumulador [ticker dados-posicao]]
+                               (try
+                                 (let [dados-mercado (acoes/buscar-dados-acao ticker)
+                                       valor-atual (or (:preco-atual dados-mercado) 0.0)
+                                       relatorio-posicao (calcular-rentabilidade-por-posicao dados-posicao valor-atual)]
 
-                             ;; 2. Retorna o NOVO ACUMULADOR (soma e adiciona à lista)
-                             {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
-                              :total-investido (+ (:total-investido acumulador) (:valor-investido relatorio-posicao))
-                              :total-mercado (+ (:total-mercado acumulador) (:valor-mercado relatorio-posicao))
-                              :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) (:lucro-prejuizo relatorio-posicao))}))
-                         estado-inicial-relatorio
-                         pares-posicoes)]
+                                   {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
+                                    :total-investido (+ (:total-investido acumulador) (:valor-investido relatorio-posicao))
+                                    :total-mercado (+ (:total-mercado acumulador) (:valor-mercado relatorio-posicao))
+                                    :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) (:lucro-prejuizo relatorio-posicao))})
 
-    ;; 3. Retorna o mapa final (que é o resultado do reduce)
-    relatorio-final))
+                                 (catch Exception e
+                                   (println (str "ERRO ao buscar dados para " ticker ": " (.getMessage e)))
+                                   acumulador)))
+                             estado-inicial-relatorio
+                             pares-posicoes)]
+        relatorio-final))))
 
-;; (defn atualizar-estado-carteira
-;;   "Atualiza o valor contido na carteira"
-;;   []
-;;   (let[
-;;        transacoes-carteira (estado/get-transacoes)
-;;        posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)
-;;        saldo-completo (obter-saldo-completo)
-;;        saldo-carteira (:total-mercado saldo-completo)
-;;   ]
-;;     (estado/set-posicoes-completas posicoes-calculadas)
-;;     (estado/set-saldo saldo-carteira)
-    
- 
-;;    )
-;;   )
 
 (defn atualizar-estado-carteira
   "Atualiza o estado derivado da carteira (posições e saldo) após uma transação."
   []
-  (let [
-        transacoes-carteira (estado/get-transacoes)
+  (try
+    (let [transacoes-carteira (estado/get-transacoes)]
 
-        posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)]
+      (when (empty? transacoes-carteira)
+        (println "AVISO: Nenhuma transação encontrada"))
 
-    (estado/set-posicoes-completas posicoes-calculadas)
+      (let [posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)]
+        (estado/set-posicoes-completas posicoes-calculadas)
 
+        (let [relatorio-completo (obter-saldo-completo)
+              saldo-total (:total-mercado relatorio-completo)]
+          (estado/set-saldo saldo-total))))
 
-    (let [
-          relatorio-completo (obter-saldo-completo)
-          saldo-total (:total-mercado relatorio-completo)]
-
-      (estado/set-saldo saldo-total)
-)))
+    (catch Exception e
+      (println "ERRO em atualizar-estado-carteira:" (.getMessage e))
+      (throw e))))

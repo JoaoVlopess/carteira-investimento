@@ -1,6 +1,5 @@
 ;;O atom central e funções de acesso/mutação crua. "Banco de dados"
-(ns carteira-investimento.dados.estado
-  (:require [clojure.core :as c])) ;; usando para evitar conflitos de nomes do clojure e do meu escopo do projeto (c/ para funções do proprio cojure)
+(ns carteira-investimento.dados.estado)
 
 (def carteira
   "O atom central que armazena o estado da carteira de investimentos."
@@ -12,7 +11,7 @@
   "Adiciona uma transação à lista de transações no atom. 
   A 'transacao' é um mapa que contém todos os dados da operação."
   [transacao]
-  (c/swap! carteira update :transacoes c/conj transacao))
+  (swap! carteira update :transacoes conj transacao))
 
 (defn get-posicoes
   "Retorna o mapa de posições (posicoes e quantidades)."
@@ -33,30 +32,33 @@
   "Remove uma posicao do mapa de :posicoes no atom 'carteira'.
    Esta função deve ser chamada apenas se a quantidade da ação for zero."
   [ticker]
-  (c/swap! carteira update :posicoes c/dissoc ticker))
+  (swap! carteira update :posicoes dissoc ticker))
 
 (defn set-saldo [novo-saldo]
   "Atualiza o valor do saldo da carteira"
-  (c/swap! carteira c/assoc :saldo novo-saldo))
+  (swap! carteira assoc :saldo novo-saldo))
 
-(defn get-transacoes 
-  "Retorna todas as transações da carteira"
+(defn get-transacoes
+  "Retorna todas as transações da carteira ou filtra por período de datas"
   ([]
-   :transacoes @carteira)
-  
-  ([data-inicio data-fim]
-   ;;fazer
-   ) 
-  )
+   (:transacoes @carteira))
 
-(defn set-posicao [ticker dados-posicao]
+  ([data-inicio data-fim]
+   (let [transacoes (:transacoes @carteira)]
+     (filter (fn [transacao]
+               (let [data-transacao (:data transacao)]
+                 (and (>= (.compareTo data-transacao data-inicio) 0)
+                      (<= (.compareTo data-transacao data-fim) 0))))
+             transacoes))))
+
+(defn set-posicao-especifica [ticker dados-posicao]
   "atualiza os valores da posição específica"
-  (c/swap! carteira
-           c/assoc-in
+  (swap! carteira
+           assoc-in
            [:posicoes ticker]
            dados-posicao))
 
 (defn set-posicoes-completas
   "Substitui o mapa de :posicoes do atom pelo novo mapa calculado."
   [novo-mapa-posicoes]
-  (c/swap! carteira c/assoc :posicoes novo-mapa-posicoes))
+  (swap! carteira assoc :posicoes novo-mapa-posicoes))

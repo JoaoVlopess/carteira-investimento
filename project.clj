@@ -5,7 +5,8 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.12.2"]
                  [org.clojure/tools.cli	"0.4.1"]
-                 [clj-http	"3.9.1"]]
+                 [clj-http	"3.9.1"]
+                 [org.clojure/data.json "2.4.0"]]
   :main ^:skip-aot carteira-investimento.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all

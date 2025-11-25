@@ -40,8 +40,7 @@
     
     (estado/add-transacao transacao)
 
-    (s-carteira/atualizar-estado-carteira) ;;fazer em carteira.clj
-
+    (s-carteira/atualizar-estado-carteira) 
     transacao
   
 )))
@@ -89,7 +88,7 @@
 
       (estado/add-transacao transacao)
 
-      (s-carteira/atualizar-estado-carteira) ;;fazer em carteira.clj
+      (s-carteira/atualizar-estado-carteira) 
 
       transacao)))
 
@@ -104,4 +103,14 @@
         transacoes-periodo (estado/get-transacoes data-inicio data-fim)
         transacoes-ticker (filter #(= (:ticker %) ticker) transacoes-periodo)]
     (sort-by :data transacoes-ticker)))
+  )
+
+(defn obter-extrato-completo 
+  "retorna o extrato completo até o momento em questão"
+  []
+  (let [
+        todas-transacoes (estado/get-transacoes)
+  ]
+    (sort-by :data todas-transacoes)
+    )
   )

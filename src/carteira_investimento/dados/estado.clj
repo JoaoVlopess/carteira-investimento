@@ -4,7 +4,7 @@
 (def carteira
   "O atom central que armazena o estado da carteira de investimentos."
   (atom {:transacoes [] ;; mapa de dados de cada transação financeira
-         :posicoes {} ;; cada posicao/ação: quantidade, preco-medio, valor investido
+         :posicoes {} ;; cada posicao/ação e o lote: {ticker -> [lote-1, lote-2, ...]} ;; cada lote tem :id-transacao, :quantidade (remanescente) e :preco-custo
          :saldo 0.0}))
 
 (defn add-transacao

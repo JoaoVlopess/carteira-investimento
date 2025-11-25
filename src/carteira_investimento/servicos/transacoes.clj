@@ -7,79 +7,71 @@
 (defn registrar-compra
   "Registra a transação de compra no atom da carteira."
   [dados-brutos]
+  (when (nil? dados-brutos)
+    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-brutos :tipo :dados-nulos})))
 
-   (when (nil? dados-brutos)
-    (throw (ex-info "Dados de entrada não podem ser nulos"
-                    {:dados dados-brutos :tipo :dados-nulos})))
-  
-  (let [{:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos)]
-    
-    (when (or (nil? ticker)
-              (not (pos? quantidade))      ;; Quantidade deve ser > 0
-              (not (pos? preco_unitario))) ;; Preço deve ser > 0
-      (throw (ex-info "Dados de compra inválidos: ticker, quantidade e preco_unitario são obrigatórios e devem ser positivos."
-                      {:dados dados-brutos :tipo :dados-invalidos}))) 
-    
-  (let[
-       valor-total (* quantidade preco_unitario) 
-       valor-liquido (+ valor-total taxas)
-       id (str (java.util.UUID/randomUUID))
-       transacao
-       {:id-transacao id
-        :tipo :COMPRA
-        :ticker ticker
-        :quantidade quantidade
-        :preco_unitario preco_unitario
-        :taxas taxas 
-        :valor-total valor-total
-        :valor-liquido valor-liquido
-        :moeda moeda
-        :data (java.time.LocalDate/now)}
-       ]
-   
-    
+  (let [{:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos)
+
+        _ (when (or (nil? ticker) (not (pos? quantidade)) (not (pos? preco_unitario)))
+            (throw (ex-info "Dados de compra inválidos..." {:dados dados-brutos :tipo :dados-invalidos})))
+
+        valor-total (* quantidade preco_unitario)
+        valor-liquido (+ valor-total taxas)
+        id (str (java.util.UUID/randomUUID))
+
+        transacao {:id-transacao id
+                   :tipo :COMPRA
+                   :ticker ticker
+                   :quantidade quantidade
+                   :preco_unitario preco_unitario
+                   :taxas taxas
+                   :valor-total valor-total
+                   :valor-liquido valor-liquido
+                   :moeda moeda
+                   :data (java.time.LocalDate/now)}] ; <-- Final do único bloco let
+
     (estado/add-transacao transacao)
+    (s-carteira/atualizar-estado-carteira)
+    transacao))
 
-    (s-carteira/atualizar-estado-carteira) 
-    transacao
-  
-)))
 
 (defn registrar-venda
-  "Registra a transação de venda no atom da carteira após validar a posse das ações."
+  "Registra a transação de venda no atom da carteira após validar a posse das ações (somando lotes FIFO)."
   [dados-brutos]
-   (when (nil? dados-brutos)
-    (throw (ex-info "Dados de entrada não podem ser nulos"
-                    {:dados dados-brutos :tipo :dados-nulos})))
-  
-  (let [{:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos) 
-        posicao-do-ativo (estado/get-posicao-especifica ticker)
-       quantidade-em-carteira (or (:quantidade posicao-do-ativo) 0.0) ;;quantidade do ativo especifico
-        ]
+  (when (nil? dados-brutos)
+    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-brutos :tipo :dados-nulos})))
 
+  (let [;; Desestrutura o input, garantindo default de taxas
+        {:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos)
+
+        ;;  Pega a lista de lotes e soma suas quantidades
+        lotes-abertos (estado/get-posicao-especifica ticker)
+        quantidade-em-carteira (s-carteira/somar-quantidade-lotes lotes-abertos)]
+
+    ;; 1. Validação de Dados de Entrada
     (when (or (nil? ticker)
-              (not (pos? quantidade))      ;; Quantidade deve ser > 0
-              (not (pos? preco_unitario))) ;; Preço deve ser > 0
-      (throw (ex-info "Dados de compra inválidos: ticker, quantidade e preco_unitario são obrigatórios e devem ser positivos."
-                      {:dados dados-brutos :tipo :dados-invalidos})))
-    
+              (not (pos? quantidade))
+              (not (pos? preco_unitario)))
+      (throw (ex-info "Dados de venda inválidos..." {:dados dados-brutos :tipo :dados-invalidos})))
+
+    ;; 2. Validação de Estoque 
     (when (> quantidade quantidade-em-carteira)
       (throw (ex-info (str "Quantidade insuficiente de ações para vender o ticker: " ticker)
-                       {:status 409 
-                        :ticker ticker
-                        :tentativa-venda quantidade
-                        :disponivel quantidade-em-carteira})))
-      
+                      {:status 409
+                       :ticker ticker
+                       :tentativa-venda quantidade
+                       :disponivel quantidade-em-carteira})))
 
+    ;; 3. Lógica de Criação e Persistência
     (let [valor-total (* quantidade preco_unitario)
-          valor-liquido (- valor-total taxas)
+          valor-liquido (- valor-total taxas) ; Fórmula da venda correta (bruto - taxas)
           id (str (java.util.UUID/randomUUID))
           transacao
           {:id-transacao id
            :tipo :VENDA
            :ticker ticker
            :quantidade quantidade
-           :preco_unitario preco_unitario 
+           :preco_unitario preco_unitario
            :taxas taxas
            :valor-total valor-total
            :valor-liquido valor-liquido
@@ -87,9 +79,7 @@
            :data (java.time.LocalDate/now)}]
 
       (estado/add-transacao transacao)
-
-      (s-carteira/atualizar-estado-carteira) 
-
+      (s-carteira/atualizar-estado-carteira)
       transacao)))
 
 (defn obter-extrato-por-periodo 

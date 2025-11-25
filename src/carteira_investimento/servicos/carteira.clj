@@ -5,88 +5,134 @@
             ;; Importações Opcionais de Clojure Core (se necessário)
 ))
 
-(defn calcula-preco-medio
-  "custo real que cliente teve para adquirir as ações que ainda possui. Envolvendo custo total e quantidade liquida remanescente após operações
-  Recebe um array de transações"
-  [transacoes]
-  (let [;; Inicializa o redutor com quantidade e custo zerados
-         estado-inicial {:quantidade 0.0, :custo 0.0}
-  
-         ;; Reduz a lista de transações para calcular o estado final (custo e quantidade)
-         estado-final (reduce
-                       (fn [acumulador transacao]
-                         (let [tipo (:tipo transacao)]
-                           (if (= tipo :COMPRA)
-                             ;; Lógica da Compra: Soma quantidade e soma custo líquido
-                             {:quantidade (+ (:quantidade acumulador) (:quantidade transacao))
-                              :custo (+ (:custo acumulador) (:valor-liquido transacao))}
-  
-                             ;; ELse -> Lógica da Venda: Subtrai quantidade e ajusta o custo
-                             (let [custo-medio-atual (if (pos? (:quantidade acumulador))
-                                                       (/ (:custo acumulador) (:quantidade acumulador))
-                                                       0.0)
-                                   custo-das-vendidas (* custo-medio-atual (:quantidade transacao))]
-                               {:quantidade (- (:quantidade acumulador) (:quantidade transacao))
-                                :custo (- (:custo acumulador) custo-das-vendidas)}))))
-                       estado-inicial
-                       transacoes)
-  
-         quantidade-final (:quantidade estado-final)
-         custo-final (:custo estado-final)]
-     
-     (let [preco-medio-final (cond
-                               (pos? quantidade-final) (/ custo-final quantidade-final)
-                               (zero? quantidade-final) 0.0
-                               :else (throw (ex-info "Erro..." {})))]
-  
-     {:quantidade quantidade-final
-      :preco-medio preco-medio-final})))
 
 
-(defn calcular-posicoes-agregadas 
-  "Agrupa as transações por ticker. Para cada grupo, chama o calcular-preco-medio para montar o mapa completo
-  Recebe um array de transações"
-  [transacoes]
-(let [;; 1. Agrupamento eficiente por :ticker. Retorna: {"PETR4" [t1 t2], "VALE3" [t3]}
-      transacoes-agrupadas (group-by :ticker transacoes)
+(defn- ^:private processar-compra 
+  "Adiciona uma transação de compra como um novo lote aberto."
+  [lotes-atuais transacao]
+  (let [;; Mapeia a transação para o formato de lote aberto
+        novo-lote {:id-transacao (:id-transacao transacao)
+                   :quantidade (:quantidade transacao)
+                   :preco-custo (:valor-liquido transacao) ; O custo total do lote
+                   :preco-unitario (:preco_unitario transacao) ; Preço original
+                   :data (:data transacao)
+                   :ticker (:ticker transacao)}
 
-      ;; 2. Processamento: Itera sobre as ENTRADAS (pares [ticker lista-transacoes])
-      posicoes-calculadas (map (fn [[ticker lista-transacoes]]
+        ticker (:ticker transacao)
+        ;; Concatena o novo lote à lista de lotes existentes para o ticker
+        lotes-do-ticker (get lotes-atuais ticker) ; Pega a lista de lotes do ticker em questão (pode ser nil)
 
-                                 ;; Lógica de Recálculo: Obtém o mapa {:quantidade N, :preco-medio X}
-                                 (let [dados-posicao (calcula-preco-medio lista-transacoes)]
+        ;; Adiciona o novo lote e mantém a lista ordenada por data (FIFO)
+        novos-lotes-ordenados (sort-by :data (conj lotes-do-ticker novo-lote))]
 
-                                   ;; 3. Cria a entrada que será inserida no mapa final
-                                   [ticker (assoc dados-posicao :ticker ticker)]))
+    (assoc lotes-atuais ticker novos-lotes-ordenados)))
 
-                               transacoes-agrupadas)]
-(into {} posicoes-calculadas))) ;; transforma [chave valor] em map. Resultado será {"ticker" {:qnt,:preco-medio,:ticker}, ...}
 
-(defn calcular-rentabilidade-por-posicao 
-  "Calcula as métricas de desempenho para uma única ação: Valor de Mercado, Valor Investido e o Lucro/Prejuízo Líquido.
-  Recebe posição {ticker {:quantidade , :preco-medio , :ticker}}
-  Recebe preço atual da ação específica"
-  [posicao-calculada preco-atual]
-  (let [
-        {:keys [ticker quantidade preco-medio]} posicao-calculada
-        valor-total-investido (* quantidade preco-medio)
-        valor-mercado-atual (* quantidade preco-atual)
-        lucro-preju-liquido (- valor-mercado-atual valor-total-investido)
+(defn- ^:private processar-venda 
+  "Consome a quantidade vendida dos lotes mais antigos (FIFO)."
+  [lotes-atuais transacao]
+  (let [ticker (:ticker transacao)
+        quantidade-venda (:quantidade transacao)
 
-        mapa-posicao {
-                      :ticker ticker
-                      :quantidade (:quantidade posicao-calculada)
-                      :preco-medio (:preco-medio posicao-calculada)
+        ;; Obtém a lista de lotes do ticker em quesão, ordenada pela data (FIFO)
+        lotes-abertos (get lotes-atuais ticker)
+
+        ;; Usa reduce para consumir os lotes e calcular o lucro/prejuízo
+        [lotes-restantes] (reduce ;; pega so o primeiro valor do array retornado pelo reduce (pois o segundo deve ser 0)
+                           (fn [[lotes-res quant-pendente] lote] ;; lista restante / quantidades de ações a ser vendidas / lote a ser analizado
+                             (if (pos? quant-pendente) ; Se ainda há quantidade para vender
+                               (let [q-lote (:quantidade lote)
+
+                                     ;; Quantidade a consumir do lote atual: o mínimo entre o pendente e o lote
+                                     q-consumir (min quant-pendente q-lote)
+
+                                     ;; Quantidade restante no lote após a venda
+                                     q-restante-no-lote (- q-lote q-consumir)
+
+                                     ;; O lote remanescente (se houver)
+                                     lote-atualizado (when (pos? q-restante-no-lote)
+                                                       (assoc lote :quantidade q-restante-no-lote))]
+
+                                 [;; Adiciona o lote restante (ou nada) e continua
+                                  (if lote-atualizado 
+                                    (conj lotes-res lote-atualizado) 
+                                    lotes-res)
+                                  (- quant-pendente q-consumir) ; Reduz a quantidade pendente
+                                  ])
+
+                               ;; Se não houver mais quantidade para vender (ELSE do primeiro if), apenas retorna o lote restante
+                               [lotes-res quant-pendente]))
+
+                           ;; [Lista de lotes resultantes, Quantidade restante a ser vendida]
+                           [[] quantidade-venda]
+                           lotes-abertos)
+
+        ;; Mapeia o resultado para o mapa principal de lotes
+        lotes-att (assoc lotes-atuais ticker lotes-restantes)]
+
+    lotes-att))
+
+
+(defn reconstruir-lotes-abertos ;; usada para o estado/set-posicoes-completas percorrendo todas as transações e retornando os lotes das posições completas 
+  "Itera sobre TODAS as transações
+  para reconstruir o estado atual da carteira baseado em lotes abertos (FIFO)."
+  [todas-transacoes]
+  (let [;; Garante que as transações são processadas em ordem cronológica para o FIFO
+        transacoes-ordenadas (sort-by :data todas-transacoes)
+
+        ;; Usa reduce para acumular o mapa de lotes abertos {ticker -> [lotes]}
+        lotes-finais (reduce
+                      (fn [lotes-acumulados transacao]
+                        (let [tipo (:tipo transacao)]
+                          (cond
+                            (= tipo :COMPRA) (processar-compra lotes-acumulados transacao)
+                            (= tipo :VENDA) (processar-venda lotes-acumulados transacao)
+                            :else lotes-acumulados))) ; Ignora tipos desconhecidos
+                      {} ; Estado inicial: Mapa de lotes vazio
+                      transacoes-ordenadas)]
+
+    lotes-finais))
+
+(defn somar-quantidade-lotes
+  "função que serve para dar ao módulo de Transações (venda) uma visão rápida do estoque total disponível para um ativo específico."
+  [lotes-abertos]
+  (let [soma-qnt (reduce
+                  (fn [acc lote]
+                    (let [qnt-desse-lote (:quantidade lote)]
+                      (+ acc qnt-desse-lote)))
+                  0.0
+                  lotes-abertos)]
+    soma-qnt))
+
+(defn somar-custo-total-lotes
+  [lotes-abertos]
+  (reduce + 0.0 (map :preco-custo lotes-abertos)))
+
+
+
+(defn calcular-rentabilidade-por-posicao
+  "Calcula as métricas de desempenho para uma única ação. 
+   Agora, calcula o valor investido somando TODOS os lotes abertos."
+  [lotes-abertos preco-atual]
+  (let [;; Reduce para somar a quantidade e o custo de todos os lotes abertos
+        ;; Pega a quantidade total somando todos os lotes
+        quantidade-total (somar-quantidade-lotes lotes-abertos) 
+        
+        ;; Pega o custo total somando o custo de todos os lotes
+        valor-investido (somar-custo-total-lotes lotes-abertos)
+
+        ;; 2. CÁLCULOS DE MERCADO E LUCRO
+        valor-mercado-atual (* quantidade-total preco-atual)
+        lucro-preju-liquido (- valor-mercado-atual valor-investido)
+
+        ;; 3. Criação do Mapa de Posição Detalhada
+        mapa-posicao {:ticker (:ticker (first lotes-abertos)) ; Pega o ticker do primeiro lote
+                      :quantidade quantidade-total
+                      :valor-investido valor-investido
                       :preco-atual preco-atual
-                      :valor-investido valor-total-investido
                       :valor-mercado valor-mercado-atual
-                      :lucro-prejuizo lucro-preju-liquido ;; - é preju | + é lucro
-                      }
-        ]
-    mapa-posicao
-    )
-  
-  )
+                      :lucro-prejuizo lucro-preju-liquido}]
+    mapa-posicao))
 
 
 (defn obter-saldo-completo
@@ -100,25 +146,26 @@
        :total-mercado 0.0
        :total-lucro-prejuizo 0.0}
 
-      (let [pares-posicoes (seq todas-posicoes) ;;converte o mapa de posições em uma sequência de pares [[ticker1 dados1] [ticker2 dados2] ...]
-            estado-inicial-relatorio {:posicoes-detalhadas [] ;; mapa de desempenho de cada posição (ticker)
-                                      :total-investido 0.0 ;; valor investido total
-                                      :total-mercado 0.0 ;; valor de mercado total
-                                      :total-lucro-prejuizo 0.0} ;; lucro/preju total
+      (let [pares-posicoes (seq todas-posicoes)
+            estado-inicial-relatorio {:posicoes-detalhadas []
+                                      :total-investido 0.0
+                                      :total-mercado 0.0
+                                      :total-lucro-prejuizo 0.0}
 
             relatorio-final (reduce
-                             (fn [acumulador [ticker dados-posicao]]
+                             (fn [acumulador [ticker lista-de-lotes]] ; 🔑 DICA: Renomeie para 'lista-de-lotes' para clareza
                                (try
-                                 (let [dados-mercado (acoes/buscar-dados-acao ticker) ;; pega os dados atuais do mercado do ticker em questão
-                                       valor-atual (or (:preco-atual dados-mercado) 0.0) ;; busca valor atual da posição
-                                       relatorio-posicao (calcular-rentabilidade-por-posicao dados-posicao valor-atual)] ;; calcula a rentabilidade de cada posição do ticker em questão
-                                   
+                                 (let [;; dados-mercado agora será buscado APÓS a validação de lotes
+                                       dados-mercado (acoes/buscar-dados-acao ticker)
+                                       valor-atual (or (:preco-atual dados-mercado) 0.0)
+
+                                       ;;  Chamada com a lista de lotes
+                                       relatorio-posicao (calcular-rentabilidade-por-posicao lista-de-lotes valor-atual)]
+
                                    {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
                                     :total-investido (+ (:total-investido acumulador) (:valor-investido relatorio-posicao))
                                     :total-mercado (+ (:total-mercado acumulador) (:valor-mercado relatorio-posicao))
                                     :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) (:lucro-prejuizo relatorio-posicao))})
-                                 ;; atualiza o estado-inicial-relatorio com o valor acumulado de cada desempenho das posições
-                                 
 
                                  (catch Exception e
                                    (println (str "ERRO ao buscar dados para " ticker ": " (.getMessage e)))
@@ -128,22 +175,25 @@
         relatorio-final))))
 
 
+
+
 (defn atualizar-estado-carteira
   "Atualiza o estado derivado da carteira (posições e saldo) após uma transação."
   []
   (try
-    (let [transacoes-carteira (estado/get-transacoes)] ;;pega todas as transações da carteira
+    (let [transacoes-carteira (estado/get-transacoes)
 
-      (when (empty? transacoes-carteira)
-        (println "AVISO: Nenhuma transação encontrada"))
+          ;; Chama o algoritmo FIFO
+          posicoes-calculadas (reconstruir-lotes-abertos transacoes-carteira)]
 
-      (let [posicoes-calculadas (calcular-posicoes-agregadas transacoes-carteira)]
-        (estado/set-posicoes-completas posicoes-calculadas) ;; calcula preço medio , quantidade de cada posição e atualiza na carteira
+      ;; 1. Salva o novo mapa de posições (estrutura de lotes)
+      (estado/set-posicoes-completas posicoes-calculadas)
 
-        (let [relatorio-completo (obter-saldo-completo) ;; calcula o saldo da carteira (depois de ter calculado e adicionado as posições)
-              saldo-total (:total-mercado relatorio-completo)]
-          (estado/set-saldo saldo-total)))) ;; atualiza saldo total da carteira
+      (let [relatorio-completo (obter-saldo-completo)
+            saldo-total (:total-mercado relatorio-completo)]
+
+        ;; 2. Salva o novo saldo
+        (estado/set-saldo saldo-total)))
 
     (catch Exception e
-      (println "ERRO em atualizar-estado-carteira:" (.getMessage e))
       (throw e))))

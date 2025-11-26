@@ -4,83 +4,107 @@
             [carteira-investimento.integracao.acoes :as acoes]
             [carteira-investimento.servicos.carteira :as s-carteira]))
 
+(defn calcular-taxas-automaticas
+  "Calcula taxas baseadas no valor da operação (0.1% padrão)"
+  [valor-bruto]
+  (* valor-bruto 0.001))
+
+
 (defn registrar-compra
-  "Registra a transação de compra no atom da carteira."
-  [dados-brutos]
-  (when (nil? dados-brutos)
-    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-brutos :tipo :dados-nulos})))
+  "Registra compra com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
+  [dados-entrada]
+  (when (nil? dados-entrada)
+    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-entrada :tipo :dados-nulos})))
 
-  (let [{:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos)
+  (let [{:keys [ticker quantidade]} dados-entrada
 
-        _ (when (or (nil? ticker) (not (pos? quantidade)) (not (pos? preco_unitario)))
-            (throw (ex-info "Dados de compra inválidos..." {:dados dados-brutos :tipo :dados-invalidos})))
+        ;; Validação básica
+        _ (when (or (nil? ticker) (not (pos? quantidade)))
+            (throw (ex-info "Ticker e quantidade são obrigatórios" {:dados dados-entrada :tipo :dados-invalidos})))
 
-        valor-total (* quantidade preco_unitario)
-        valor-liquido (+ valor-total taxas)
+        ;; BUSCA PREÇO REAL AUTOMATICAMENTE
+        dados-mercado (acoes/buscar-dados-acao ticker)
+        preco-atual (:preco-atual dados-mercado)
+
+        ;; CALCULA TAXAS AUTOMATICAMENTE (0.1% do valor)
+        valor-bruto (* quantidade preco-atual)
+        taxas-calculadas (calcular-taxas-automaticas valor-bruto)
+
+        ;; CÁLCULOS FINAIS
+        valor-total (* quantidade preco-atual)
+        valor-liquido (+ valor-total taxas-calculadas)
         id (str (java.util.UUID/randomUUID))
 
+        ;; TRANSAÇÃO COMPLETA
         transacao {:id-transacao id
                    :tipo :COMPRA
                    :ticker ticker
                    :quantidade quantidade
-                   :preco_unitario preco_unitario
-                   :taxas taxas
+                   :preco_unitario preco-atual
+                   :taxas taxas-calculadas
                    :valor-total valor-total
                    :valor-liquido valor-liquido
-                   :moeda moeda
-                   :data (java.time.LocalDate/now)}] ; <-- Final do único bloco let
+                   :moeda "BRL"
+                   :data (java.time.LocalDate/now)}]
 
+    ;; PERSISTE E ATUALIZA ESTADO
     (estado/add-transacao transacao)
     (s-carteira/atualizar-estado-carteira)
     transacao))
 
 
 (defn registrar-venda
-  "Registra a transação de venda no atom da carteira após validar a posse das ações (somando lotes FIFO)."
-  [dados-brutos]
-  (when (nil? dados-brutos)
-    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-brutos :tipo :dados-nulos})))
+  "Registra venda com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
+  [dados-entrada]
+  (when (nil? dados-entrada)
+    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-entrada :tipo :dados-nulos})))
 
-  (let [;; Desestrutura o input, garantindo default de taxas
-        {:keys [ticker quantidade preco_unitario taxas moeda]} (merge {:taxas 0.0} dados-brutos)
+  (let [{:keys [ticker quantidade]} dados-entrada
 
-        ;;  Pega a lista de lotes e soma suas quantidades
+        ;; Validação básica
+        _ (when (or (nil? ticker) (not (pos? quantidade)))
+            (throw (ex-info "Ticker e quantidade são obrigatórios" {:dados dados-entrada :tipo :dados-invalidos})))
+
+        ;; BUSCA PREÇO REAL AUTOMATICAMENTE
+        dados-mercado (acoes/buscar-dados-acao ticker)
+        preco-atual (:preco-atual dados-mercado)
+
+        ;; VALIDAÇÃO DE ESTOQUE (FIFO)
         lotes-abertos (estado/get-posicao-especifica ticker)
-        quantidade-em-carteira (s-carteira/somar-quantidade-lotes lotes-abertos)]
+        quantidade-em-carteira (s-carteira/somar-quantidade-lotes lotes-abertos)
 
-    ;; 1. Validação de Dados de Entrada
-    (when (or (nil? ticker)
-              (not (pos? quantidade))
-              (not (pos? preco_unitario)))
-      (throw (ex-info "Dados de venda inválidos..." {:dados dados-brutos :tipo :dados-invalidos})))
+        _ (when (> quantidade quantidade-em-carteira)
+            (throw (ex-info (str "Quantidade insuficiente de ações para vender o ticker: " ticker)
+                            {:status 409
+                             :ticker ticker
+                             :tentativa-venda quantidade
+                             :disponivel quantidade-em-carteira})))
 
-    ;; 2. Validação de Estoque 
-    (when (> quantidade quantidade-em-carteira)
-      (throw (ex-info (str "Quantidade insuficiente de ações para vender o ticker: " ticker)
-                      {:status 409
-                       :ticker ticker
-                       :tentativa-venda quantidade
-                       :disponivel quantidade-em-carteira})))
+        ;; CALCULA TAXAS AUTOMATICAMENTE (0.1% do valor)
+        valor-bruto (* quantidade preco-atual)
+        taxas-calculadas (* valor-bruto 0.001)
 
-    ;; 3. Lógica de Criação e Persistência
-    (let [valor-total (* quantidade preco_unitario)
-          valor-liquido (- valor-total taxas) ; Fórmula da venda correta (bruto - taxas)
-          id (str (java.util.UUID/randomUUID))
-          transacao
-          {:id-transacao id
-           :tipo :VENDA
-           :ticker ticker
-           :quantidade quantidade
-           :preco_unitario preco_unitario
-           :taxas taxas
-           :valor-total valor-total
-           :valor-liquido valor-liquido
-           :moeda moeda
-           :data (java.time.LocalDate/now)}]
+        ;; CÁLCULOS FINAIS
+        valor-total (* quantidade preco-atual)
+        valor-liquido (- valor-total taxas-calculadas) ; Venda: bruto - taxas
+        id (str (java.util.UUID/randomUUID))
 
-      (estado/add-transacao transacao)
-      (s-carteira/atualizar-estado-carteira)
-      transacao)))
+        ;; TRANSAÇÃO COMPLETA
+        transacao {:id-transacao id
+                   :tipo :VENDA
+                   :ticker ticker
+                   :quantidade quantidade
+                   :preco_unitario preco-atual
+                   :taxas taxas-calculadas
+                   :valor-total valor-total
+                   :valor-liquido valor-liquido
+                   :moeda "BRL"
+                   :data (java.time.LocalDate/now)}]
+
+    ;; PERSISTE E ATUALIZA ESTADO
+    (estado/add-transacao transacao)
+    (s-carteira/atualizar-estado-carteira)
+    transacao))
 
 (defn obter-extrato-por-periodo 
   "retorna o extrato do periodo específico"

@@ -9,9 +9,83 @@
             [carteira-investimento.integracao.acoes :as i-acoes]
             [clojure.string :as s]))
 
-;; ========================================
-;; HANDLERS
-;; ========================================
+
+
+(defn obter-extrato-handler
+  "Retorna extrato de transações com filtros opcionais"
+  [request]
+  (try
+    (let [params (:params request)
+          data-inicio (get params "data_inicio")
+          data-fim (get params "data_fim")
+          ticker (get params "ticker")]
+
+      (cond
+        ;; Extrato por período e ticker específico
+        (and data-inicio data-fim ticker)
+        (let [inicio (java.time.LocalDate/parse data-inicio)
+              fim (java.time.LocalDate/parse data-fim)
+              extrato (s-trans/obter-extrato-por-periodo inicio fim ticker)]
+          (resp/response {:extrato extrato
+                          :periodo {:inicio data-inicio :fim data-fim}
+                          :ticker ticker
+                          :total-transacoes (count extrato)}))
+
+        ;; Extrato por período
+        (and data-inicio data-fim)
+        (let [inicio (java.time.LocalDate/parse data-inicio)
+              fim (java.time.LocalDate/parse data-fim)
+              extrato (s-trans/obter-extrato-por-periodo inicio fim)]
+          (resp/response {:extrato extrato
+                          :periodo {:inicio data-inicio :fim data-fim}
+                          :total-transacoes (count extrato)}))
+
+        ;; Extrato completo
+        :else
+        (let [extrato (s-trans/obter-extrato-completo)
+              extrato-json (map #(update % :data str) extrato) ] ;;precisa transformar em string para reconhecer como json
+          (resp/response {:extrato extrato-json
+                          :total-transacoes (count extrato-json)}))))
+
+    (catch Exception e
+      (-> (resp/response {:erro (.getMessage e)})
+          (resp/status 500)))))
+
+
+
+(defn obter-acoes-populares-handler
+  "Retorna lista de ações mais populares COM DADOS REAIS"
+  []
+  (try
+    (let [tickers-populares ["PETR4" "VALE3" "ITUB4"  
+                              "WEGE3" "MGLU3" "RENT3" "ELET3"]
+
+           
+          acoes-com-dados (reduce (fn [acc ticker] ;; pega as informações sobre cada ação e acumula
+                                    (let [dados-acao (try
+                                                       (let [dados (i-acoes/buscar-dados-acao ticker)]
+                                                         (assoc dados :status "success"))
+                                                       (catch Exception e
+                                                         {:ticker ticker
+                                                          :nome "Erro ao buscar"
+                                                          :preco-atual 0.0
+                                                          :moeda "BRL"
+                                                          :status "error"
+                                                          :erro (.getMessage e)}))]
+                                      (conj acc dados-acao))) ; Adiciona os dados da ação ao acumulador
+                                  [] ; Acumulador inicial 
+                                  tickers-populares)]
+
+      (resp/response {:acoes-populares acoes-com-dados
+                      :total (count acoes-com-dados)
+                      :descricao "Ações mais negociadas na B3 com dados atuais"
+                       :timestamp (str (java.time.LocalDateTime/now))}))
+    (catch Exception e
+      (-> (resp/response {:erro (.getMessage e)})
+          (resp/status 500)))))
+
+
+
 
 (defn obter-saldo-handler
   "Retorna o saldo completo da carteira"
@@ -22,14 +96,19 @@
       (-> (resp/response {:erro (.getMessage e)})
           (resp/status 500)))))
 
+
+
 (defn consultar-acao-handler
   "Consulta dados de uma ação na API externa"
   [ticker]
   (try
-    (resp/response (i-acoes/buscar-dados-acao (s/upper-case ticker)))
+    (resp/response (i-acoes/buscar-dados-acao (s/upper-case ticker))) ;; transformo o nome do ticker em maiusculo para evitar erros
     (catch Exception e
       (-> (resp/response {:erro (.getMessage e)})
           (resp/status 500)))))
+
+
+
 
 (defn registrar-compra-handler
   "Registra uma transação de compra"
@@ -54,6 +133,9 @@
     (catch Exception e
       (-> (resp/response {:erro (.getMessage e)})
           (resp/status 500)))))
+
+
+
 
 (defn registrar-venda-handler
   "Registra uma transação de venda"
@@ -83,9 +165,7 @@
       (-> (resp/response {:erro (.getMessage e)})
           (resp/status 500)))))
 
-;; ========================================
-;; ROTAS
-;; ========================================
+
 
 (defroutes app-routes
   ;; Rota raiz
@@ -97,6 +177,9 @@
   ;; Endpoints da carteira
   (GET "/api/carteira/saldo" []
     (obter-saldo-handler))
+  
+  (GET "/api/acoes/populares" []
+    (obter-acoes-populares-handler))
 
   ;; Endpoints de ações
   (GET "/api/acoes/:ticker" [ticker]
@@ -108,6 +191,9 @@
 
   (POST "/api/transacoes/venda" request
     (registrar-venda-handler request))
+  
+    (GET "/api/transacoes/extrato" request     
+    (obter-extrato-handler request))
 
   ;; Rota 404
   (route/not-found
@@ -120,7 +206,7 @@
 
 (def app
   "Aplicação principal com middleware configurado para API REST"
-  (-> app-routes
-      (wrap-json-response)
-      (wrap-json-body {:keywords? true})
-      (wrap-defaults api-defaults)))
+  (-> app-routes ;;base das rotas
+      (wrap-json-response) ;; transforma as respostas para JSON
+      (wrap-json-body {:keywords? true}) ;; transforma as entradas para o Clojure
+      )) ;; Adiciona vários middlewares úteis 

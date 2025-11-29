@@ -7,7 +7,8 @@
             [carteira-investimento.servicos.carteira :as s-carteira]
             [carteira-investimento.servicos.transacoes :as s-trans]
             [carteira-investimento.integracao.acoes :as i-acoes]
-            [clojure.string :as s]))
+            [clojure.string :as s]
+             [ring.middleware.cors :refer [wrap-cors]]))
 
 
 
@@ -200,13 +201,14 @@
    (resp/response {:erro "Rota não encontrada"
                    :status 404})))
 
-;; ========================================
-;; APLICAÇÃO COM MIDDLEWARE
-;; ========================================
 
 (def app
   "Aplicação principal com middleware configurado para API REST"
   (-> app-routes ;;base das rotas
+        (wrap-cors :access-control-allow-origin [#"http://localhost:3000"  ; porta do frontend
+                                               #"http://127\.0\.0\.1:3000"] ; alternativa localhost
+                 :access-control-allow-methods [:get :post :put :delete :options]
+                 :access-control-allow-headers ["Content-Type" "Authorization"])
       (wrap-json-response) ;; transforma as respostas para JSON
       (wrap-json-body {:keywords? true}) ;; transforma as entradas para o Clojure
       )) ;; Adiciona vários middlewares úteis 

@@ -15,7 +15,8 @@
 
                  ;; Dependências compartilhadas
                  [clj-http "3.12.3"]
-                 [org.clojure/data.json "2.4.0"]]
+                 [org.clojure/data.json "2.4.0"]
+                 [ring-cors "0.1.13"]]
 
   ;; Configuração CLI (padrão)
   :main ^:skip-aot carteira-investimento.core

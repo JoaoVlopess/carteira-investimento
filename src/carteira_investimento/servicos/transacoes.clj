@@ -9,18 +9,10 @@
   [valor-bruto]
   (* valor-bruto 0.001))
 
-
 (defn registrar-compra
   "Registra compra com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
   [dados-entrada]
-  (when (nil? dados-entrada)
-    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-entrada :tipo :dados-nulos})))
-
   (let [{:keys [ticker quantidade]} dados-entrada
-
-        ;; Validação básica
-        _ (when (or (nil? ticker) (not (pos? quantidade)))
-            (throw (ex-info "Ticker e quantidade são obrigatórios" {:dados dados-entrada :tipo :dados-invalidos})))
 
         ;; BUSCA PREÇO REAL AUTOMATICAMENTE
         dados-mercado (acoes/buscar-dados-acao ticker)
@@ -52,18 +44,10 @@
     (s-carteira/atualizar-estado-carteira)
     transacao))
 
-
 (defn registrar-venda
   "Registra venda com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
   [dados-entrada]
-  (when (nil? dados-entrada)
-    (throw (ex-info "Dados de entrada não podem ser nulos" {:dados dados-entrada :tipo :dados-nulos})))
-
   (let [{:keys [ticker quantidade]} dados-entrada
-
-        ;; Validação básica
-        _ (when (or (nil? ticker) (not (pos? quantidade)))
-            (throw (ex-info "Ticker e quantidade são obrigatórios" {:dados dados-entrada :tipo :dados-invalidos})))
 
         ;; BUSCA PREÇO REAL AUTOMATICAMENTE
         dados-mercado (acoes/buscar-dados-acao ticker)
@@ -71,60 +55,52 @@
 
         ;; VALIDAÇÃO DE ESTOQUE (FIFO)
         lotes-abertos (estado/get-posicao-especifica ticker)
-        quantidade-em-carteira (s-carteira/somar-quantidade-lotes lotes-abertos)
+        quantidade-em-carteira (s-carteira/somar-quantidade-lotes lotes-abertos)]
 
-        _ (when (> quantidade quantidade-em-carteira)
-            (throw (ex-info (str "Quantidade insuficiente de ações para vender o ticker: " ticker)
-                            {:status 409
-                             :ticker ticker
-                             :tentativa-venda quantidade
-                             :disponivel quantidade-em-carteira})))
+    (if (> quantidade quantidade-em-carteira)
+      (throw (ex-info (str "Quantidade insuficiente de ações para vender o ticker: " ticker)
+                      {:ticker ticker
+                       :tentativa-venda quantidade
+                       :disponivel quantidade-em-carteira}))
+      (let [;; CALCULA TAXAS AUTOMATICAMENTE (0.1% do valor)
+            valor-bruto (* quantidade preco-atual)
+            taxas-calculadas (* valor-bruto 0.001)
 
-        ;; CALCULA TAXAS AUTOMATICAMENTE (0.1% do valor)
-        valor-bruto (* quantidade preco-atual)
-        taxas-calculadas (* valor-bruto 0.001)
+            ;; CÁLCULOS FINAIS
+            valor-total (* quantidade preco-atual)
+            valor-liquido (- valor-total taxas-calculadas) ; Venda: bruto - taxas
+            id (str (java.util.UUID/randomUUID))
 
-        ;; CÁLCULOS FINAIS
-        valor-total (* quantidade preco-atual)
-        valor-liquido (- valor-total taxas-calculadas) ; Venda: bruto - taxas
-        id (str (java.util.UUID/randomUUID))
+            ;; TRANSAÇÃO COMPLETA
+            transacao {:id-transacao id
+                       :tipo :VENDA
+                       :ticker ticker
+                       :quantidade quantidade
+                       :preco_unitario preco-atual
+                       :taxas taxas-calculadas
+                       :valor-total valor-total
+                       :valor-liquido valor-liquido
+                       :moeda "BRL"
+                       :data (java.time.LocalDate/now)}]
 
-        ;; TRANSAÇÃO COMPLETA
-        transacao {:id-transacao id
-                   :tipo :VENDA
-                   :ticker ticker
-                   :quantidade quantidade
-                   :preco_unitario preco-atual
-                   :taxas taxas-calculadas
-                   :valor-total valor-total
-                   :valor-liquido valor-liquido
-                   :moeda "BRL"
-                   :data (java.time.LocalDate/now)}]
+        ;; PERSISTE E ATUALIZA ESTADO
+        (estado/add-transacao transacao)
+        (s-carteira/atualizar-estado-carteira)
+        transacao))))
 
-    ;; PERSISTE E ATUALIZA ESTADO
-    (estado/add-transacao transacao)
-    (s-carteira/atualizar-estado-carteira)
-    transacao))
-
-(defn obter-extrato-por-periodo 
+(defn obter-extrato-por-periodo
   "retorna o extrato do periodo específico"
-  ([data-inicio data-fim ] ;; pega todos extratos do periodo especifico
-  (let [transacoes-periodo (estado/get-transacoes data-inicio data-fim)] 
-    (sort-by :data transacoes-periodo)))
+  ([data-inicio data-fim] ;; pega todos extratos do periodo especifico
+   (let [transacoes-periodo (estado/get-transacoes data-inicio data-fim)]
+     (sort-by :data transacoes-periodo)))
 
   ([data-inicio data-fim ticker] ;; pega todos extratos do periodo e ticker especifico
-  (let [
-        transacoes-periodo (estado/get-transacoes data-inicio data-fim)
-        transacoes-ticker (filter #(= (:ticker %) ticker) transacoes-periodo)]
-    (sort-by :data transacoes-ticker)))
-  )
+   (let [transacoes-periodo (estado/get-transacoes data-inicio data-fim)
+         transacoes-ticker (filter #(= (:ticker %) ticker) transacoes-periodo)]
+     (sort-by :data transacoes-ticker))))
 
-(defn obter-extrato-completo 
+(defn obter-extrato-completo
   "retorna o extrato completo até o momento em questão"
   []
-  (let [
-        todas-transacoes (estado/get-transacoes)
-  ]
-    (sort-by :data todas-transacoes)
-    )
-  )
+  (let [todas-transacoes (estado/get-transacoes)]
+    (sort-by :data todas-transacoes)))

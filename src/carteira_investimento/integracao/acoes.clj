@@ -17,7 +17,7 @@
   "Recebe dados brutos da api e retorna uma padronização e organização desses dados."
   [dados-brutos]
   (let [dados-mapa (if (string? dados-brutos)
-                     (json/read-str dados-brutos :key-fn keyword)
+                     (json/read-str dados-brutos :key-fn keyword) ;; se for string precisa fazer a transformação para JSON e transformar as chaves em keywords no clojure
                      dados-brutos)
         dados-acao (get-in dados-mapa [:results 0])]
 

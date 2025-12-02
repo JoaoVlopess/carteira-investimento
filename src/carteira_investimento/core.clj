@@ -62,9 +62,10 @@
                     (print "Ticker: ")
                     (flush)
                     (let [ticker (.toUpperCase (read-line))
-                          dados (buscar-dados-acao ticker)]
+                          dados (buscar-dados-acao ticker)
+                          nome-limpo (clojure.string/trim (:nome dados))]
                       (println "Ticker:" (:ticker dados))
-                      (println "Nome:" (:nome dados))
+                      (println "Nome:" nome-limpo)
                       (println "Preco: R$" (:preco-atual dados)))
                     true)
 
@@ -102,13 +103,21 @@
                                  "|" (:quantidade t) "| R$" (:valor-total t))))
                     true)
 
-    (= opcao "5") (do
-                    (let [saldo (obter-saldo)]
-                      (println "\n=== SALDO ===")
-                      (println "Total Investido: R$" (format "%.2f" (:total-investido saldo)))
-                      (println "Valor Mercado: R$" (format "%.2f" (:total-mercado saldo)))
-                      (println "Lucro/Prejuizo: R$" (format "%.2f" (:total-lucro-prejuizo saldo))))
-                    true)
+(= opcao "5") (do
+                (let [saldo (obter-saldo)]
+                  (println "\n=== SALDO ===")
+                  (println "Total Investido: R$" (format "%.2f" (:total-investido saldo)))
+                  (println "Valor Mercado: R$" (format "%.2f" (:total-mercado saldo)))
+                  (let [lucro (:total-lucro-prejuizo saldo)]
+                    (if (>= lucro 0)
+                      (println "Lucro: R$" (format "%.2f" lucro))
+                      (println "Prejuizo: R$" (format "%.2f" (Math/abs lucro)))))
+                  (when (> (:total-mercado saldo) 0)
+                    (println "Rentabilidade:"
+                             (format "%.2f%%"
+                                     (* 100 (/ (:total-lucro-prejuizo saldo)
+                                               (:total-investido saldo)))))))
+                true)
 
     (= opcao "6") (do
                     (let [acoes (obter-acoes-populares)]

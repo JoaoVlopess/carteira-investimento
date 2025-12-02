@@ -10,7 +10,7 @@
   (let [;; Mapeia a transação para o formato de lote aberto
         novo-lote {:id-transacao (:id-transacao transacao)
                    :quantidade (:quantidade transacao)
-                   :preco-custo (:valor-liquido transacao) ; O custo total do lote
+                   :preco-custo (:valor-total transacao) ; O custo total do lote
                    :preco-unitario (:preco_unitario transacao) ; Preço original
                    :data (:data transacao)
                    :ticker (:ticker transacao)}

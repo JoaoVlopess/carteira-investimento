@@ -12,10 +12,10 @@
 (defn registrar-compra
   "Registra compra com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
   [dados-entrada]
-  (let [{:keys [ticker quantidade]} dados-entrada
+  (let [{:keys [ticker quantidade data]} dados-entrada
 
         ;; BUSCA PREÇO REAL AUTOMATICAMENTE
-        dados-mercado (acoes/buscar-dados-acao ticker)
+        dados-mercado (acoes/buscar-dados-acao ticker data)
         preco-atual (:preco-atual dados-mercado)
 
         ;; CALCULA TAXAS AUTOMATICAMENTE (0.1% do valor)
@@ -37,7 +37,7 @@
                    :valor-total valor-total
                    :valor-liquido valor-liquido
                    :moeda "BRL"
-                   :data (java.time.LocalDate/now)}]
+                   :data data}]
 
     ;; PERSISTE E ATUALIZA ESTADO
     (estado/add-transacao transacao)
@@ -47,10 +47,10 @@
 (defn registrar-venda
   "Registra venda com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
   [dados-entrada]
-  (let [{:keys [ticker quantidade]} dados-entrada
+  (let [{:keys [ticker quantidade data]} dados-entrada
 
         ;; BUSCA PREÇO REAL AUTOMATICAMENTE
-        dados-mercado (acoes/buscar-dados-acao ticker)
+        dados-mercado (acoes/buscar-dados-acao ticker data)
         preco-atual (:preco-atual dados-mercado)
 
         ;; VALIDAÇÃO DE ESTOQUE (FIFO)
@@ -81,7 +81,7 @@
                        :valor-total valor-total
                        :valor-liquido valor-liquido
                        :moeda "BRL"
-                       :data (java.time.LocalDate/now)}]
+                       :data data}]
 
         ;; PERSISTE E ATUALIZA ESTADO
         (estado/add-transacao transacao)

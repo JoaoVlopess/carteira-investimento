@@ -9,6 +9,33 @@
   [valor-bruto]
   (* valor-bruto 0.001))
 
+(defn obter-quantidade-disponivel
+  "Obtem quantidade disponivel de um ticker ate uma data especifica"
+  ([ticker]
+   (obter-quantidade-disponivel ticker (java.time.LocalDate/now)))
+
+  ([ticker data-limite]
+   (let [transacoes (estado/get-transacoes)
+         transacoes-ticker (filter #(= (:ticker %) ticker) transacoes)
+         ;; Filtra apenas transações até a data limite
+         transacoes-ate-data (filter #(not (.isAfter (:data %) data-limite)) transacoes-ticker)]
+
+     (println "=== DEBUG QUANTIDADE DISPONIVEL ===")
+     (println "Ticker:" ticker)
+     (println "Data limite:" data-limite)
+     (println "Total transacoes:" (count transacoes))
+     (println "Transacoes do ticker:" (count transacoes-ticker))
+     (println "Transacoes ate a data:" (count transacoes-ate-data))
+
+     (reduce (fn [total transacao]
+               (println "Processando:" (:tipo transacao) (:quantidade transacao) "em" (:data transacao))
+               (case (:tipo transacao)
+                 :COMPRA (+ total (:quantidade transacao))
+                 :VENDA (- total (:quantidade transacao))
+                 total))
+             0.0
+             transacoes-ate-data))))
+
 (defn registrar-compra
   "Registra compra com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
   [dados-entrada]
@@ -45,26 +72,31 @@
     transacao))
 
 (defn registrar-venda
-  "Registra venda com preço atual de mercado e taxas automáticas - IMPLEMENTAÇÃO COMPLETA"
+  "Registra venda com validacao de estoque historico e preço de mercado"
   [dados-entrada]
   (let [{:keys [ticker quantidade data]} dados-entrada
 
-        ;; BUSCA PREÇO REAL AUTOMATICAMENTE
+        ;; VALIDAÇÃO DE DATA FUTURA
+        _ (when (.isAfter data (java.time.LocalDate/now))
+            (throw (ex-info "Não é possível vender em data futura" {:data data})))
+
+        ;; BUSCA PREÇO REAL PARA A DATA ESPECÍFICA
         dados-mercado (acoes/buscar-dados-acao ticker data)
         preco-atual (:preco-atual dados-mercado)
 
-        ;; VALIDAÇÃO DE ESTOQUE (FIFO)
-        lotes-abertos (estado/get-posicao-especifica ticker)
-        quantidade-em-carteira (s-carteira/somar-quantidade-lotes lotes-abertos)]
+        ;; VALIDAÇÃO DE ESTOQUE ATÉ A DATA DA VENDA
+        quantidade-disponivel (obter-quantidade-disponivel ticker data)]
 
-    (if (> quantidade quantidade-em-carteira)
-      (throw (ex-info (str "Quantidade insuficiente de ações para vender o ticker: " ticker)
-                      {:ticker ticker
-                       :tentativa-venda quantidade
-                       :disponivel quantidade-em-carteira}))
+    (println "=== DEBUG VENDA HISTORICA ===")
+    (println "Ticker:" ticker)
+    (println "Data da venda:" data)
+    (println "Quantidade disponivel ate" data ":" quantidade-disponivel)
+    (println "Quantidade a vender:" quantidade)
+
+    (if (>= quantidade-disponivel quantidade)
       (let [;; CALCULA TAXAS AUTOMATICAMENTE (0.1% do valor)
             valor-bruto (* quantidade preco-atual)
-            taxas-calculadas (* valor-bruto 0.001)
+            taxas-calculadas (calcular-taxas-automaticas valor-bruto)
 
             ;; CÁLCULOS FINAIS
             valor-total (* quantidade preco-atual)
@@ -86,7 +118,16 @@
         ;; PERSISTE E ATUALIZA ESTADO
         (estado/add-transacao transacao)
         (s-carteira/atualizar-estado-carteira)
-        transacao))))
+        (println "Venda registrada com sucesso!")
+        transacao)
+
+      (do
+        (println "ERRO: Quantidade insuficiente!")
+        (throw (ex-info "Quantidade insuficiente para venda"
+                        {:ticker ticker
+                         :quantidade-solicitada quantidade
+                         :quantidade-disponivel quantidade-disponivel
+                         :data data}))))))
 
 (defn obter-extrato-por-periodo
   "retorna o extrato do periodo específico"

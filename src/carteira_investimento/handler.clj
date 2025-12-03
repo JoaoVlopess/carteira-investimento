@@ -148,27 +148,43 @@
   "Registra uma transação de venda"
   [request]
   (try
+    (println "=== DEBUG VENDA HANDLER ===")
+    (println "Request recebido - keys:" (keys request))
+    (println "Body content:" (pr-str (:body request)))
+
     (let [dados (:body request)]
+      (println "Dados extraídos:" (pr-str dados))
+
       (when (nil? dados)
+        (println "ERRO: Body está vazio!")
         (throw (ex-info "Body vazio" {:status 400})))
 
+      (println "Chamando s-trans/registrar-venda...")
       (let [resultado (s-trans/registrar-venda dados)]
+        (println "Resultado obtido:" (pr-str resultado))
+
         (-> (resp/response {:status "success"
                             :message "Venda realizada com sucesso"
                             :ticker (:ticker resultado)
-                            :quantidade (:quantidade resultado)})
+                            :quantidade (:quantidade resultado)
+                            :valor-liquido (:valor-liquido resultado)
+                            :data (str (:data dados))})
             (resp/status 201))))
 
     (catch clojure.lang.ExceptionInfo e
-      (let [dados-erro (.getData e)
-            status (:status dados-erro)]
-        (cond
-          (= status 409) (-> (resp/response {:erro (.getMessage e)})
-                             (resp/status 409))
-          :else (-> (resp/response {:erro (.getMessage e)})
-                    (resp/status 400)))))
+      (println "ExceptionInfo capturada:")
+      (println "  Mensagem:" (.getMessage e))
+      (println "  Dados:" (pr-str (.getData e)))
+      (.printStackTrace e)
+      (-> (resp/response {:erro (.getMessage e)
+                          :detalhes (.getData e)})
+          (resp/status 400)))
 
     (catch Exception e
+      (println "Exception geral capturada:")
+      (println "  Tipo:" (type e))
+      (println "  Mensagem:" (.getMessage e))
+      (.printStackTrace e)
       (-> (resp/response {:erro (.getMessage e)})
           (resp/status 500)))))
 

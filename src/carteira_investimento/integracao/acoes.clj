@@ -6,21 +6,23 @@
 
 (def api-token "5N4ZTjFauu9QG5R4TW1sVk")
 
+;; Mapeamento para converter chaves da API BRAPI para nosso padrão
 (def ^:private chave-map-brapi
   {:symbol                 :ticker
-   :longName              :nome
+   :longName               :nome
    :regularMarketPrice     :preco-atual
    :currency               :moeda})
 
+;; Mapeamento para dados históricos (OHLC - Open, High, Low, Close)
 (def ^:private chave-map-historico
   {:open                   :preco-abertura
    :high                   :preco-maximo
    :low                    :preco-minimo
-   :close                  :preco-fechamento
+   :close                  :preco-fechamento    ; ← Este é o preço usado!
    :volume                 :volume})
 
 (defn normalizar-dados-api
-  "Recebe dados brutos da api e retorna uma padronizacao"
+  "Converte dados da API BRAPI para nosso formato padrão"
   [dados-brutos]
   (let [dados-mapa (if (string? dados-brutos)
                      (json/read-str dados-brutos :key-fn keyword)
@@ -31,105 +33,105 @@
       (let [dados-renomeados (set/rename-keys dados-acao chave-map-brapi)
             chaves-necessarias [:ticker :nome :preco-atual :moeda]]
         (select-keys dados-renomeados chaves-necessarias))
+      ;; Fallback em caso de erro
       {:ticker "ERRO", :nome "Sem dados", :preco-atual 0.0, :moeda "BRL"})))
 
-(defn encontrar-preco-para-data
-  "Encontra o preço mais próximo da data desejada no histórico"
-  [historico data-desejada]
-  (let [timestamp-desejado (.toEpochSecond (.atStartOfDay data-desejada java.time.ZoneOffset/UTC))
-        dados-ordenados (sort-by :date historico)
-
-        ;; Encontra o dado mais próximo da data
-        dado-mais-proximo (reduce (fn [melhor atual]
-                                    (let [diff-melhor (Math/abs (- (:date melhor) timestamp-desejado))
-                                          diff-atual (Math/abs (- (:date atual) timestamp-desejado))]
-                                      (if (< diff-atual diff-melhor) atual melhor)))
-                                  (first dados-ordenados)
-                                  dados-ordenados)]
-    dado-mais-proximo))
-
 (defn normalizar-dados-historicos
-  "Normaliza dados historicos da API"
-  [dados-brutos ticker data-desejada]
+  "Processa dados históricos e extrai o preço de fechamento"
+  [dados-brutos ticker]
   (let [dados-mapa (if (string? dados-brutos)
                      (json/read-str dados-brutos :key-fn keyword)
                      dados-brutos)
         resultado (get-in dados-mapa [:results 0])
         historico (get resultado :historicalDataPrice)
-        nome (get resultado :shortName)
-        moeda (get resultado :currency)
+        nome (get resultado :longName)
+        moeda (get resultado :currency)]
 
-        ;; Encontra o preço para a data específica
-        dado-especifico (encontrar-preco-para-data historico data-desejada)
-        preco-historico (get dado-especifico :close)]
+    (if (and historico (seq historico)) ;; seq verifica se ta vazia
+      ;; SIMPLIFICAÇÃO: Pega simplesmente o primeiro (mais recente) do histórico
+      (let [primeiro-dado (first historico)
+            preco-historico (:close primeiro-dado)]
+        {:ticker ticker
+         :nome nome
+         :preco-atual preco-historico  ; ← Usa preço de fechamento
+         :moeda moeda})
 
-    {:ticker ticker
-     :nome nome
-     :preco-atual preco-historico
-     :moeda moeda}))
+      ;; Fallback: se não tem histórico, retorna erro
+      {:ticker ticker
+       :nome "Dados históricos indisponíveis"
+       :preco-atual 0.0
+       :moeda "BRL"})))
 
-
-(defn data-eh-hoje? [data]
-  "Verifica se a data fornecida eh hoje"
+(defn data-eh-hoje?
+  "Verifica se a data fornecida é hoje"
+  [data]
   (let [hoje (java.time.LocalDate/now)
         data-fornecida (if (string? data)
                          (java.time.LocalDate/parse data)
                          data)]
     (.equals hoje data-fornecida)))
 
-(defn data-eh-futura? [data]
-  "Verifica se a data eh futura (nao permitida)"
-  (let [hoje (java.time.LocalDate/now)
-        data-fornecida (if (string? data)
-                         (java.time.LocalDate/parse data)
-                         data)]
-    (.isAfter data-fornecida hoje)))
+(defn buscar-dados-atuais
+  "Busca dados atuais (preço em tempo real)"
+  [ticker]
+  (let [url (str "https://brapi.dev/api/quote/" ticker)
+        opcoes-http {:headers {"Authorization" (str "Bearer " api-token)}
+                     :as :json
+                     :throw-exceptions false}
+        resposta (http/get url opcoes-http)]
 
-(defn calcular-range-para-data
-  "Calcula o range necessário para obter dados de uma data específica"
-  [data-desejada]
-  (let [hoje (java.time.LocalDate/now)
-        dias-diferenca (.between java.time.temporal.ChronoUnit/DAYS data-desejada hoje)]
-    (cond
-      (<= dias-diferenca 0) "1d"      ; Hoje
-      (<= dias-diferenca 2) "2d"      ; Últimos 2 dias
-      (<= dias-diferenca 5) "5d"      ; Últimos 5 dias
-      (<= dias-diferenca 7) "7d"      ; Última semana
-      (<= dias-diferenca 30) "1mo"    ; Último mês
-      (<= dias-diferenca 90) "3mo"    ; Últimos 3 meses
-      (<= dias-diferenca 180) "6mo"   ; Últimos 6 meses
-      :else "1y")))                   ; Último ano
+    (if (= 200 (:status resposta))
+      (normalizar-dados-api (:body resposta))
+      {:ticker ticker, :nome "Erro ao buscar", :preco-atual 0.0, :moeda "BRL"})))
+
+(defn buscar-dados-historicos
+  "Busca dados históricos para uma data específica"
+  [ticker data]
+  (let [data-str (str data)  ; Converte LocalDate para string "2025-12-02"
+        ;; SIMPLIFICAÇÃO: Sempre usa range de 5 dias para garantir dados
+        url (str "https://brapi.dev/api/quote/" ticker
+                 "?range=5d&interval=1d&fundamental=false"
+                 "&start=" data-str "&end=" data-str) ;; formação da url de busca a respeito de uma data especifica
+        opcoes-http {:headers {"Authorization" (str "Bearer " api-token)}
+                     :as :json
+                     :throw-exceptions false}
+        resposta (http/get url opcoes-http)]
+
+    (if (= 200 (:status resposta))
+      (normalizar-dados-historicos (:body resposta) ticker)
+      {:ticker ticker, :nome "Erro ao buscar histórico", :preco-atual 0.0, :moeda "BRL"})))
 
 (defn buscar-dados-acao
-  "Busca dados de uma acao - atual ou historica baseada na data"
+  "FUNÇÃO PRINCIPAL: Busca dados de ação com fallback inteligente
+   - Se é hoje: busca dados atuais
+   - Se é data passada: tenta histórico, se falhar usa atual
+   - Sempre retorna algo válido"
   ([ticker]
    (buscar-dados-acao ticker (java.time.LocalDate/now)))
 
   ([ticker data]
    (try
      (if (data-eh-hoje? data)
-       ;; Para hoje, usa API simples
-       (let [url (str "https://brapi.dev/api/quote/" ticker)
-             opcoes-http {:headers {"Authorization" (str "Bearer " api-token)}
-                          :as :json
-                          :throw-exceptions false}
-             resposta (http/get url opcoes-http)]
+       ;; CASO 1: Data é hoje - busca dados atuais
+       (buscar-dados-atuais ticker)
 
-         (if (= 200 (:status resposta))
-           (normalizar-dados-api (:body resposta))
-           {:ticker ticker, :nome "Erro ao buscar", :preco-atual 0.0, :moeda "BRL"}))
+       ;; CASO 2: Data é passada - tenta histórico com fallback
+       (let [dados-historicos (buscar-dados-historicos ticker data)]
+         (if (and dados-historicos
+                  (> (:preco-atual dados-historicos) 0.0))
+           ;; Sucesso: retorna dados históricos
+           dados-historicos
 
-       ;; Para datas passadas, usa range
-       (let [range (calcular-range-para-data data)
-             url (str "https://brapi.dev/api/quote/" ticker "?range=" range "&interval=1d")
-             opcoes-http {:headers {"Authorization" (str "Bearer " api-token)}
-                          :as :json
-                          :throw-exceptions false}
-             resposta (http/get url opcoes-http)]
+           ;; Fallback: se histórico falhou, usa dados atuais
+           (do
+             (println "⚠️ Aviso: Dados históricos indisponíveis para" data
+                      "- usando preço atual")
+             (buscar-dados-atuais ticker)))))
 
-         (if (= 200 (:status resposta))
-           (normalizar-dados-historicos (:body resposta) ticker data)
-           {:ticker ticker, :nome "Erro ao buscar dados historicos", :preco-atual 0.0, :moeda "BRL"})))
-
+     ;; CASO 3: Erro geral - fallback final
      (catch Exception e
-       {:ticker ticker, :nome "Erro de conexao", :preco-atual 0.0, :moeda "BRL"}))))
+       (println "⚠️ Erro ao buscar dados:" (.getMessage e))
+       {:ticker ticker
+        :nome "Erro de conexão"
+        :preco-atual 0.0
+        :moeda "BRL"}))))

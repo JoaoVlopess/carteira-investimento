@@ -74,7 +74,7 @@
       {:valido false :erro "Ticker deve conter apenas letras e numeros (sem simbolos especiais)"}
 
       :else
-      {:valido true :valor ticker-upper}))) ; Retorna ticker em maiusculo
+      {:valido true :valor ticker-upper})))
 
 (defn validar-quantidade [quantidade-str]
   "Valida e converte quantidade"
@@ -102,7 +102,7 @@
   (try
     (cond
       (str/blank? data-str)
-      {:valido true :valor (java.time.LocalDate/now)} ; Data vazia = hoje
+      {:valido true :valor (java.time.LocalDate/now)}
 
       (not (re-matches #"\d{4}-\d{2}-\d{2}" data-str))
       {:valido false :erro "Formato deve ser YYYY-MM-DD (ex: 2025-12-01)"}
@@ -121,13 +121,41 @@
     (catch Exception _
       {:valido false :erro "Data invalida. Use formato YYYY-MM-DD"})))
 
+(defn validar-periodo [data-inicio-str data-fim-str]
+  "Valida período de datas"
+  (try
+    (cond
+      (or (str/blank? data-inicio-str) (str/blank? data-fim-str))
+      {:valido false :erro "Ambas as datas devem ser preenchidas"}
+
+      :else
+      (let [data-inicio (java.time.LocalDate/parse data-inicio-str)
+            data-fim (java.time.LocalDate/parse data-fim-str)]
+        (cond
+          (.isAfter data-inicio data-fim)
+          {:valido false :erro "Data inicio deve ser anterior à data fim"}
+
+          (.isAfter data-inicio (java.time.LocalDate/now))
+          {:valido false :erro "Data inicio nao pode ser futura"}
+
+          (.isAfter data-fim (java.time.LocalDate/now))
+          {:valido false :erro "Data fim nao pode ser futura"}
+
+          (.isBefore data-inicio (.minusYears (java.time.LocalDate/now) 2))
+          {:valido false :erro "Periodo muito antigo (maximo 2 anos)"}
+
+          :else
+          {:valido true :valor {:inicio data-inicio :fim data-fim}})))
+    (catch Exception _
+      {:valido false :erro "Formato de data invalido. Use YYYY-MM-DD"})))
+
 (defn validar-confirmacao [confirmacao-str]
   "Valida confirmacao s/n"
   (let [conf (.toLowerCase (str/trim confirmacao-str))]
     (cond
       (= conf "s") {:valido true :valor "s"}
       (= conf "n") {:valido true :valor "n"}
-      (str/blank? conf) {:valido true :valor "n"} ; Enter = nao
+      (str/blank? conf) {:valido true :valor "n"}
       :else {:valido false :erro "Digite 's' para SIM ou 'n' para NAO (ou apenas Enter para NAO)"})))
 
 (defn ler-entrada-segura [prompt validador]
@@ -144,8 +172,8 @@
               resultado (validador entrada)]
           (if (:valido resultado)
             (if (contains? resultado :valor)
-              (:valor resultado)    ; Retorna valor processado
-              entrada)              ; Retorna entrada original se nao tem :valor
+              (:valor resultado)
+              entrada)
             (do
               (println (str "[X] " (:erro resultado)))
               (println ">> Tente novamente...")
@@ -175,13 +203,12 @@
       {:sucesso false :erro (str "Erro inesperado: " (.getMessage e))})))
 
 (defn buscar-dados-acao
-  "Busca dados de acao via integracao direta (TEMPORARIO)"
+  "Busca dados de acao via integracao direta"
   ([ticker]
    (buscar-dados-acao ticker (java.time.LocalDate/now)))
 
   ([ticker data]
    (try
-     ;; Chama diretamente a função de integração que sabemos que funciona
      (let [dados (acoes/buscar-dados-acao ticker data)]
        {:sucesso true :dados dados})
      (catch Exception e
@@ -216,13 +243,31 @@
     resultado))
 
 (defn obter-extrato []
-  "Obtem extrato com tratamento de erro"
+  "Obtem extrato completo com tratamento de erro"
   (let [resultado (executar-requisicao-segura
                    #(let [url (str api-local-url "/api/transacoes/extrato")
                           response (http/get url)
                           dados (json/parse-string (:body response) true)]
                       (:extrato dados))
                    "extrato de transacoes")]
+    resultado))
+
+(defn obter-extrato-por-periodo [data-inicio data-fim]
+  "Obtem extrato de um periodo especifico com tratamento de erro"
+  (let [resultado (executar-requisicao-segura
+                   #(let [url (str api-local-url "/api/transacoes/extrato")
+                          ;; CORREÇÃO: Usar formato correto de query params
+                          params {:query-params {"data-inicio" (str data-inicio)
+                                                 "data-fim" (str data-fim)}}
+                          _ (println "=== DEBUG FRONTEND ===")
+                          _ (println "URL:" url)
+                          _ (println "Params:" params)
+                          response (http/get url params)
+                          _ (println "Response status:" (:status response))
+                          dados (json/parse-string (:body response) true)
+                          _ (println "Response body keys:" (keys dados))]
+                      (:extrato dados))
+                   "extrato por periodo")]
     resultado))
 
 (defn obter-saldo []
@@ -258,13 +303,14 @@
   (println "   2 - Acoes Populares")
   (println "   3 - Ver Saldo Detalhado")
   (println "   4 - Extrato Completo")
+  (println "   5 - Extrato por Periodo")
   (println "")
   (println ">> TRANSACOES:")
-  (println "   5 - Comprar Acao")
-  (println "   6 - Vender Acao")
+  (println "   6 - Comprar Acao")
+  (println "   7 - Vender Acao")
   (println "")
   (println ">> SISTEMA:")
-  (println "   7 - Status da API")
+  (println "   8 - Status da API")
   (println "   0 - Sair")
   (println "")
   (exibir-linha-separadora)
@@ -275,8 +321,8 @@
   (when nome
     (-> nome
         str/trim
-        (str/replace #"\s+(ON|PN|NM)\s*$" "")  ; Remove codigos de mercado
-        (str/replace #"\s+" " ")               ; Normaliza espacos
+        (str/replace #"\s+(ON|PN|NM)\s*$" "")
+        (str/replace #"\s+" " ")
         str/trim)))
 
 (defn exibir-dados-acao-detalhados [dados]
@@ -459,7 +505,6 @@
         (println "")
         (println (str ">> Buscando dados da acao para " data "..."))
 
-        ;; Primeiro busca dados da acao para mostrar preco
         (let [dados-acao (buscar-dados-acao ticker data)]
           (if (:sucesso dados-acao)
             (let [acao (:dados dados-acao)
@@ -563,7 +608,7 @@
       (exibir-erro (:erro resultado)))))
 
 (defn processar-extrato []
-  "Processa visualizacao de extrato"
+  "Processa visualizacao de extrato completo"
   (println ">> Carregando extrato...")
   (let [resultado (obter-extrato)]
     (if (:sucesso resultado)
@@ -571,6 +616,32 @@
         (exibir-extrato-detalhado (:dados resultado))
         (pausar))
       (exibir-erro (:erro resultado)))))
+
+(defn processar-extrato-periodo []
+  "Processa visualizacao de extrato por periodo"
+  (exibir-cabecalho "EXTRATO POR PERIODO")
+
+  (when-let [data-inicio (ler-entrada-segura
+                          "Digite a data de INICIO (YYYY-MM-DD):"
+                          validar-data)]
+    (when-let [data-fim (ler-entrada-segura
+                         "Digite a data de FIM (YYYY-MM-DD):"
+                         validar-data)]
+
+      ;; Validação adicional do período
+      (let [validacao (validar-periodo (str data-inicio) (str data-fim))]
+        (if (:valido validacao)
+          (do
+            (println (str ">> Carregando extrato de " data-inicio " até " data-fim "..."))
+            (let [resultado (obter-extrato-por-periodo data-inicio data-fim)]
+              (if (:sucesso resultado)
+                (do
+                  (println "")
+                  (println (str ">> PERIODO: " data-inicio " até " data-fim))
+                  (exibir-extrato-detalhado (:dados resultado))
+                  (pausar))
+                (exibir-erro (:erro resultado)))))
+          (exibir-erro (:erro validacao)))))))
 
 (defn processar-acoes-populares []
   "Processa visualizacao de acoes populares"
@@ -589,12 +660,13 @@
     "2" (do (processar-acoes-populares) true)
     "3" (do (processar-saldo) true)
     "4" (do (processar-extrato) true)
-    "5" (do (processar-compra) true)
-    "6" (do (processar-venda) true)
-    "7" (do (verificar-status-api) (pausar) true)
+    "5" (do (processar-extrato-periodo) true)
+    "6" (do (processar-compra) true)
+    "7" (do (processar-venda) true)
+    "8" (do (verificar-status-api) (pausar) true)
     "0" false
     (do
-      (exibir-erro "Opcao invalida! Escolha um numero de 0 a 7.")
+      (exibir-erro "Opcao invalida! Escolha um numero de 0 a 8.")
       true)))
 
 ;; ========================================
@@ -610,7 +682,7 @@
       (processar-opcao opcao))
     (catch Exception e
       (exibir-erro (str "Erro inesperado: " (.getMessage e)))
-      true))) ; Continua o loop mesmo com erro
+      true)))
 
 (defn executar-menu
   "Loop principal do sistema"
@@ -628,7 +700,6 @@
   (println "")
   (println ">> Verificando conexao com a API...")
 
-  ;; Teste inicial de conexao
   (let [teste-api (executar-requisicao-segura
                    #(http/get api-local-url)
                    "teste de conexao")]

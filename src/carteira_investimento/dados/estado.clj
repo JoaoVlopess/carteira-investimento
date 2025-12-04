@@ -41,15 +41,18 @@
 (defn get-transacoes
   "Retorna todas as transações da carteira ou filtra por período de datas"
   ([]
-   (:transacoes @carteira))
+   ;; Retorna todas ordenadas por data
+   (sort-by :data (:transacoes @carteira)))
 
   ([data-inicio data-fim]
-   (let [transacoes (:transacoes @carteira)]
-     (filter (fn [transacao]
-               (let [data-transacao (:data transacao)]
-                 (and (>= (.compareTo data-transacao data-inicio) 0)
-                      (<= (.compareTo data-transacao data-fim) 0))))
-             transacoes))))
+   (let [transacoes (:transacoes @carteira)
+         filtradas (filter (fn [transacao]
+                             (let [data-transacao (:data transacao)]
+                               ;; Filtro inclusivo: data-inicio <= data-transacao <= data-fim
+                               (and (not (.isBefore data-transacao data-inicio))
+                                    (not (.isAfter data-transacao data-fim)))))
+                           transacoes)]
+     (sort-by :data filtradas))))
 
 (defn set-posicao-especifica [ticker dados-posicao]
   "atualiza os valores da posição específica"

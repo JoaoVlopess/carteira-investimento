@@ -70,8 +70,8 @@
 
         ;; Atualiza o mapa principal: remove ticker se não há lotes, senão atualiza
         lotes-att (if (empty? lotes-restantes)
-                    (dissoc lotes-atuais ticker) ; Remove o ticker se não houver mais lotes
-                    (assoc lotes-atuais ticker lotes-restantes))]
+                    (dissoc lotes-atuais ticker) ; Remove o ticker se não houver mais lotes IF
+                    (assoc lotes-atuais ticker lotes-restantes))] ;; retorna o mapa atualizado com os lotes restantes depois da venda ELSE
 
     lotes-att))
 
@@ -141,38 +141,42 @@
   []
   (let [todas-posicoes (estado/get-posicoes)]
 
-    (if (empty? todas-posicoes) ; Caso a carteira esteja vazia
+    (if (empty? todas-posicoes)
       {:posicoes-detalhadas []
        :total-investido 0.0
        :total-mercado 0.0
        :total-lucro-prejuizo 0.0}
 
-      (let [;; Converte o mapa de posições em sequência de pares [ticker, lotes]
-            pares-posicoes (seq todas-posicoes)
-
-            ;; Estado inicial do relatório
+      (let [pares-posicoes (seq todas-posicoes)
             estado-inicial {:posicoes-detalhadas []
                             :total-investido 0.0
                             :total-mercado 0.0
                             :total-lucro-prejuizo 0.0}]
 
-        ;; Processa cada ticker e seus lotes
         (reduce
          (fn [acumulador [ticker lista-de-lotes]]
-           ;; Busca dados atuais de mercado para o ticker
+           ;; Busca preço ATUAL (sem data) para valor de mercado
            (let [dados-mercado (acoes/buscar-dados-acao ticker)
-                 valor-atual (or (:preco-atual dados-mercado) 0.0)
+                 preco-atual (or (:preco-atual dados-mercado) 0.0)
 
-                 ;; Calcula métricas da posição
-                 relatorio-posicao (calcular-rentabilidade-por-posicao lista-de-lotes valor-atual)]
+                 ;; Calcula métricas usando os custos REAIS dos lotes
+                 quantidade-total (somar-quantidade-lotes lista-de-lotes)
+                 valor-investido-real (somar-custo-total-lotes lista-de-lotes)  ; ← CUSTO REAL
+                 valor-mercado-atual (* quantidade-total preco-atual)
+                 lucro-prejuizo-real (- valor-mercado-atual valor-investido-real)
 
-             ;; Se conseguiu calcular a posição, acumula nos totais
-             (if relatorio-posicao
-               {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
-                :total-investido (+ (:total-investido acumulador) (:valor-investido relatorio-posicao))
-                :total-mercado (+ (:total-mercado acumulador) (:valor-mercado relatorio-posicao))
-                :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) (:lucro-prejuizo relatorio-posicao))}
-               acumulador))) ; Se não conseguiu calcular, mantém acumulador inalterado
+                 relatorio-posicao {:ticker ticker
+                                    :quantidade quantidade-total
+                                    :valor-investido valor-investido-real  ; ← CUSTO REAL DOS LOTES
+                                    :preco-atual preco-atual
+                                    :valor-mercado valor-mercado-atual
+                                    :lucro-prejuizo lucro-prejuizo-real}]
+
+             ;; Acumula nos totais
+             {:posicoes-detalhadas (conj (:posicoes-detalhadas acumulador) relatorio-posicao)
+              :total-investido (+ (:total-investido acumulador) valor-investido-real)
+              :total-mercado (+ (:total-mercado acumulador) valor-mercado-atual)
+              :total-lucro-prejuizo (+ (:total-lucro-prejuizo acumulador) lucro-prejuizo-real)}))
          estado-inicial
          pares-posicoes)))))
 

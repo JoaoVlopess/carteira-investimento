@@ -7,14 +7,14 @@
 
 (def api-local-url "http://localhost:3000")
 
-;; ========================================
+
 ;; UTILITARIOS E FORMATACAO
-;; ========================================
+
 
 (defn limpar-tela []
   "Limpa a tela do terminal"
-  (print "\033[2J\033[H")
-  (flush))
+  (print "\033[2J\033[H") ;; clear
+  (flush))  ; Garante que o prompt apareça
 
 (defn pausar []
   "Pausa e aguarda o usuario pressionar Enter"
@@ -53,9 +53,9 @@
   "Exibe mensagem de aviso formatada"
   (println (str "[AVISO] " mensagem)))
 
-;; ========================================
-;; VALIDACOES DE ENTRADA CORRIGIDAS
-;; ========================================
+
+;; VALIDACOES DE ENTRADA 
+
 
 (defn validar-ticker [ticker]
   "Valida formato do ticker e converte para maiusculo automaticamente"
@@ -179,9 +179,9 @@
               (println ">> Tente novamente...")
               (recur (inc tentativas)))))))))
 
-;; ========================================
+
 ;; FUNCOES DE API COM TRATAMENTO DE ERRO
-;; ========================================
+
 
 (defn executar-requisicao-segura [funcao-req descricao]
   "Executa requisicao HTTP com tratamento de erro robusto"
@@ -256,16 +256,10 @@
   "Obtem extrato de um periodo especifico com tratamento de erro"
   (let [resultado (executar-requisicao-segura
                    #(let [url (str api-local-url "/api/transacoes/extrato")
-                          ;; CORREÇÃO: Usar formato correto de query params
                           params {:query-params {"data-inicio" (str data-inicio)
                                                  "data-fim" (str data-fim)}}
-                          _ (println "=== DEBUG FRONTEND ===")
-                          _ (println "URL:" url)
-                          _ (println "Params:" params)
                           response (http/get url params)
-                          _ (println "Response status:" (:status response))
-                          dados (json/parse-string (:body response) true)
-                          _ (println "Response body keys:" (keys dados))]
+                          dados (json/parse-string (:body response) true)]
                       (:extrato dados))
                    "extrato por periodo")]
     resultado))
@@ -290,9 +284,9 @@
                    "acoes populares")]
     resultado))
 
-;; ========================================
-;; INTERFACE VISUAL APRIMORADA
-;; ========================================
+
+;; INTERFACE VISUAL
+
 
 (defn exibir-menu-principal []
   "Exibe menu principal estilizado"
@@ -669,9 +663,9 @@
       (exibir-erro "Opcao invalida! Escolha um numero de 0 a 8.")
       true)))
 
-;; ========================================
-;; LOOP PRINCIPAL CORRIGIDO
-;; ========================================
+
+;; LOOP PRINCIPAL
+
 
 (defn executar-menu-seguro []
   "Executa uma iteracao do menu com tratamento de erro"

@@ -48,7 +48,7 @@
    (let [transacoes (:transacoes @carteira)
          filtradas (filter (fn [transacao]
                              (let [data-transacao (:data transacao)]
-                               ;; Filtro inclusivo: data-inicio <= data-transacao <= data-fim
+                               ;; data-inicio <= data-transacao <= data-fim
                                (and (not (.isBefore data-transacao data-inicio))
                                     (not (.isAfter data-transacao data-fim)))))
                            transacoes)]

@@ -3,7 +3,7 @@
   (:require [carteira-investimento.dados.estado :as estado]
             [carteira-investimento.integracao.acoes :as acoes]))
 
-(defn- ^:private processar-compra
+(defn- processar-compra
   "Adiciona uma transação de compra como um novo lote aberto.
    Cada compra cria um novo lote com seu preço específico para controle FIFO."
   [lotes-atuais transacao]
@@ -25,7 +25,7 @@
     ;; Retorna o mapa atualizado com os novos lotes para este ticker
     (assoc lotes-atuais ticker novos-lotes-ordenados)))
 
-(defn- ^:private processar-venda
+(defn- processar-venda
   "Consome a quantidade vendida dos lotes mais antigos (FIFO).
    Implementa o algoritmo First-In-First-Out para controle de custos."
   [lotes-atuais transacao]
@@ -54,8 +54,8 @@
                                                                 :quantidade q-restante-no-lote
                                                                 :preco-custo custo-proporcional)))]
 
-                                 [;; Adiciona o lote restante (se houver) à lista de resultados
-                                  (if lote-atualizado
+                                 ;; Adiciona o lote restante (se houver) à lista de resultados
+                                  [(if lote-atualizado
                                     (conj lotes-res lote-atualizado)
                                     lotes-res)
                                   ;; Reduz a quantidade pendente
@@ -167,7 +167,7 @@
 
                  relatorio-posicao {:ticker ticker
                                     :quantidade quantidade-total
-                                    :valor-investido valor-investido-real  ; ← CUSTO REAL DOS LOTES
+                                    :valor-investido valor-investido-real  
                                     :preco-atual preco-atual
                                     :valor-mercado valor-mercado-atual
                                     :lucro-prejuizo lucro-prejuizo-real}]

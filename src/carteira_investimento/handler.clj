@@ -17,22 +17,10 @@
   "Retorna extrato de transações com filtros opcionais"
   [request]
   (try
-    (let [params (:params request)
-          query-params (:query-params request)
-
-          ;; CORREÇÃO: Tentar ambos os formatos (hífen e underscore)
-          data-inicio (or (get params "data-inicio")
-                          (get params "data_inicio")
-                          (get query-params "data-inicio")
-                          (get query-params "data_inicio"))
-
-          data-fim (or (get params "data-fim")
-                       (get params "data_fim")
-                       (get query-params "data-fim")
-                       (get query-params "data_fim"))
-
-          ticker (or (get params "ticker")
-                     (get query-params "ticker"))]
+    (let [query-params (:query-params request)
+          data-inicio (get query-params "data-inicio")
+          data-fim (get query-params "data-fim")
+          ticker (get query-params "ticker")]
 
       (cond
         ;; Extrato por período e ticker específico
@@ -46,13 +34,12 @@
                           :ticker ticker
                           :total-transacoes (count extrato-json)}))
 
-        ;; Extrato por período
+        ;; Extrato por período (todas as ações)
         (and data-inicio data-fim)
         (let [inicio (java.time.LocalDate/parse data-inicio)
               fim (java.time.LocalDate/parse data-fim)
               extrato (s-trans/obter-extrato-por-periodo inicio fim)
               extrato-json (map #(update % :data str) extrato)]
-          (println "Transações encontradas para período:" (count extrato-json))
           (resp/response {:extrato extrato-json
                           :periodo {:inicio data-inicio :fim data-fim}
                           :total-transacoes (count extrato-json)}))
@@ -61,13 +48,10 @@
         :else
         (let [extrato (s-trans/obter-extrato-completo)
               extrato-json (map #(update % :data str) extrato)]
-          (println "Retornando extrato completo:" (count extrato-json) "transações")
           (resp/response {:extrato extrato-json
                           :total-transacoes (count extrato-json)}))))
 
     (catch Exception e
-      (println "ERRO no extrato handler:" (.getMessage e))
-      (.printStackTrace e)
       (-> (resp/response {:erro (.getMessage e)})
           (resp/status 500)))))
 
@@ -112,14 +96,17 @@
 
 (defn consultar-acao-handler
   "Consulta dados de uma acao na API externa com suporte a data"
-  [ticker & [data]]
-  (try
-    (if data
-      (resp/response (i-acoes/buscar-dados-acao (s/upper-case ticker) data))
-      (resp/response (i-acoes/buscar-dados-acao (s/upper-case ticker))))
-    (catch Exception e
-      (-> (resp/response {:erro (.getMessage e)})
-          (resp/status 500)))))
+  ([ticker]
+   (consultar-acao-handler ticker nil))
+
+  ([ticker data]
+   (try
+     (if data
+       (resp/response (i-acoes/buscar-dados-acao (s/upper-case ticker) data))
+       (resp/response (i-acoes/buscar-dados-acao (s/upper-case ticker))))
+     (catch Exception e
+       (-> (resp/response {:erro (.getMessage e)})
+           (resp/status 500))))))
 
 (defn registrar-compra-handler
   "Registra uma transação de compra"
@@ -156,7 +143,7 @@
       (when (nil? dados)
         (throw (ex-info "Body vazio" {:status 400})))
 
-      ;; VALIDAÇÃO CRÍTICA: Verificar estoque ANTES de processar
+      ;;  Verificar estoque ANTES de processar
       (let [ticker (:ticker dados)
             quantidade (:quantidade dados)
             data (:data dados)
@@ -203,7 +190,7 @@
   (GET "/api/acoes/populares" []
     (obter-acoes-populares-handler))
 
-  ;; Endpoints de ações - CORRIGIDO PARA SUPORTAR DATA
+  ;; Endpoints de ações 
   (GET "/api/acoes/:ticker" [ticker :as request]
     (try
       (let [data-param (get-in request [:params "data"])

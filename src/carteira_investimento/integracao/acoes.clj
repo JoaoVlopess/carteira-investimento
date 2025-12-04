@@ -13,12 +13,12 @@
    :regularMarketPrice     :preco-atual
    :currency               :moeda})
 
-;; Mapeamento para dados históricos (OHLC - Open, High, Low, Close)
+;; Mapeamento para dados históricos 
 (def ^:private chave-map-historico
   {:open                   :preco-abertura
    :high                   :preco-maximo
    :low                    :preco-minimo
-   :close                  :preco-fechamento    ; ← Este é o preço usado!
+   :close                  :preco-fechamento    ; preço usado
    :volume                 :volume})
 
 (defn normalizar-dados-api
@@ -48,7 +48,7 @@
         moeda (get resultado :currency)]
 
     (if (and historico (seq historico)) ;; seq verifica se ta vazia
-      ;; SIMPLIFICAÇÃO: Pega simplesmente o primeiro (mais recente) do histórico
+      ;;  Pega o primeiro (mais recente) do histórico
       (let [primeiro-dado (first historico)
             preco-historico (:close primeiro-dado)]
         {:ticker ticker
@@ -56,7 +56,7 @@
          :preco-atual preco-historico  ; ← Usa preço de fechamento
          :moeda moeda})
 
-      ;; Fallback: se não tem histórico, retorna erro
+      ;; Fallback se não tem histórico, retorna erro
       {:ticker ticker
        :nome "Dados históricos indisponíveis"
        :preco-atual 0.0
@@ -88,7 +88,7 @@
   "Busca dados históricos para uma data específica"
   [ticker data]
   (let [data-str (str data)  ; Converte LocalDate para string "2025-12-02"
-        ;; SIMPLIFICAÇÃO: Sempre usa range de 5 dias para garantir dados
+        ;;  Sempre usa range de 5 dias (simplificação) para garantir dados
         url (str "https://brapi.dev/api/quote/" ticker
                  "?range=5d&interval=1d&fundamental=false"
                  "&start=" data-str "&end=" data-str) ;; formação da url de busca a respeito de uma data especifica
@@ -112,10 +112,10 @@
   ([ticker data]
    (try
      (if (data-eh-hoje? data)
-       ;; CASO 1: Data é hoje - busca dados atuais
+       ;;  Data é hoje? busca dados atuais
        (buscar-dados-atuais ticker)
 
-       ;; CASO 2: Data é passada - tenta histórico com fallback
+       ;;  Data é passada? tenta histórico com fallback
        (let [dados-historicos (buscar-dados-historicos ticker data)]
          (if (and dados-historicos
                   (> (:preco-atual dados-historicos) 0.0))
@@ -128,7 +128,7 @@
                       "- usando preço atual")
              (buscar-dados-atuais ticker)))))
 
-     ;; CASO 3: Erro geral - fallback final
+     ;; Erro geral
      (catch Exception e
        (println "⚠️ Erro ao buscar dados:" (.getMessage e))
        {:ticker ticker
